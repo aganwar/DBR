@@ -7,6 +7,7 @@ import ControlRail from "./components/ControlRail";
 import MasterGrid from "./components/MasterGrid";
 import CalendarGrid from "./components/CalendarGrid";
 import { Toast, useToast } from "./components/Toast";
+import type { ResourceDto } from "./components/MasterGrid";
 
 // Top-level: provide Toast context first, then render the actual app content.
 export default function App() {
@@ -21,21 +22,19 @@ function AppContent() {
   // Now it's safe to call the hook because we're inside <Toast>
   const toast = useToast();
 
-  const [filterGroups, setFilterGroups] = React.useState<string[]>([]);
   const [selectedResource, setSelectedResource] = React.useState<string | null>(null);
   const [selectionCount, setSelectionCount] = React.useState(0);
 
-  const canWrite = true; // plug in your real access control when ready
-
+  // Open filter rail action (funnel button)
   const openFilter = () => {
     // If you have a FilterModal/FilterBar, open it here.
-    // For now, just show a small feedback so we know the rail button works.
     toast.show("Open filter panel", { variant: "info" });
   };
 
-  const handleMasterPatched = () => {
-    // Called after master grid saves; keep for future refresh logic if needed
-    toast.show("Saved", { variant: "success" });
+  // Map MasterGrid selection -> CalendarGrid selectedResource
+  const handleSelectionChange = (rows: ResourceDto[]) => {
+    setSelectionCount(rows.length);
+    setSelectedResource(rows[0]?.resourceGroup ?? null);
   };
 
   return (
@@ -50,20 +49,20 @@ function AppContent() {
 
         {/* Content column */}
         <main className="flex-1 overflow-auto p-3">
-          {/* Filter bar placeholder — keep space ready if you wire a bar later */}
+          {/* Space for a future filter bar */}
           <div className="mb-3" />
 
           {/* Two-column layout: master (left ~35%) / calendar (right ~65%) */}
           <div className="grid grid-cols-12 gap-3 h-full">
             {/* Master grid */}
             <section className="col-span-12 lg:col-span-5 flex flex-col">
-              <MasterGrid
-                initialGroups={filterGroups}
-                onSelectResource={setSelectedResource}
-                onSelectionCount={setSelectionCount}
-                onMasterPatched={handleMasterPatched}
-                canWrite={canWrite}
-              />
+              <MasterGrid onSelectionChange={handleSelectionChange} />
+              {/* You can surface selectionCount somewhere if you want */}
+              {selectionCount > 0 && (
+                <div className="text-xs text-slate-500 mt-2">
+                  Selected: {selectionCount}
+                </div>
+              )}
             </section>
 
             {/* Calendar grid */}
@@ -72,7 +71,7 @@ function AppContent() {
                 selectedResource={selectedResource}
                 onNotify={(m, v) => toast.show(m, { variant: v })}
                 onDirty={(isDirty: boolean) => {
-                  // you can surface “Unsaved changes” here if you like
+                  // If you want, show an "Unsaved changes" badge somewhere.
                 }}
               />
             </section>

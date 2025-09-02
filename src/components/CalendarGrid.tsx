@@ -6,20 +6,23 @@ import type {
   GridApi,
   ColumnApi,
 } from "ag-grid-community";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-alpine.css";
 import { api } from "../api";
 import type { CalendarRowDto } from "../types";
-import { startOfThisWeek, endOfThisWeek, addDays, formatYMD } from "../utils/dates";
+import {
+  startOfThisWeek,
+  endOfThisWeek,
+  addDays,
+  formatYMD,
+} from "../utils/dates";
 
 type Props = {
-  selectedResource: string | null;                 // resource_group from MasterGrid
+  selectedResource: string | null; // resource_group from MasterGrid
   onNotify?: (msg: string, kind?: "ok" | "err") => void;
-  onDirty?: (dirty: boolean) => void;              // page-level Save/Cancel enablement
+  onDirty?: (dirty: boolean) => void; // page-level Save/Cancel enablement
   canWrite?: boolean;
 };
 
-type PendingMap = Record<string /*yyyy-mm-dd*/, Partial<CalendarRowDto>>;
+type PendingMap = Record<string, Partial<CalendarRowDto>>;
 
 export default function CalendarGrid({
   selectedResource,
@@ -89,19 +92,25 @@ export default function CalendarGrid({
   };
 
   // track per-cell pending changes
-  const markPending = (dateYmd: string, key: keyof CalendarRowDto, value: any) => {
+  const markPending = (
+    dateYmd: string,
+    key: keyof CalendarRowDto,
+    value: any
+  ) => {
     setPending((prev) => ({
       ...prev,
       [dateYmd]: { ...(prev[dateYmd] || {}), [key]: value },
     }));
   };
 
-  const onCellEditingStopped = (e: CellEditingStoppedEvent<CalendarRowDto>) => {
+  const onCellEditingStopped = (
+    e: CellEditingStoppedEvent<CalendarRowDto>
+  ) => {
     if (!canWrite) return;
     const ymd = e.data!.dates;
     if (e.colDef.field !== "capacity" && e.colDef.field !== "is_off") return;
 
-    // if is_off toggled true => capacity should show 0 (read-only is handled by columnDef)
+    // if is_off toggled true => capacity should show 0 (read-only handled by colDef)
     if (e.colDef.field === "is_off") {
       const nextIsOff = !!e.value;
       if (nextIsOff) {
@@ -114,7 +123,7 @@ export default function CalendarGrid({
       let parsed: number | null = null;
       if (raw === "" || raw == null) parsed = null;
       else {
-        const n = Number(String(raw).replace(",", ".")); // locale-tolerant
+        const n = Number(String(raw).replace(",", ".")); // locale tolerant
         parsed = Number.isFinite(n) ? n : null;
       }
       // if capacity 0 => backend marks is_customised and is_off=true
@@ -127,27 +136,21 @@ export default function CalendarGrid({
 
   // Save all pending changes
   const saveAll = async () => {
-    if (!canWrite || !selectedResource) return;
     if (!Object.keys(pending).length) return;
-
-    setLoading(true);
-    setError(null);
     try {
-      await api.patch(`/api/calendar/${encodeURIComponent(selectedResource)}`, {
-        changesByDate: pending,
-      });
+      const payload = Object.entries(pending).map(([date, patch]) => ({
+        dates: date,
+        ...patch,
+      }));
+      await api.post("/api/calendar/save", payload);
       setPending({});
-      await fetchCalendar();
       onNotify?.("Calendar saved", "ok");
+      await fetchCalendar();
     } catch (e: any) {
-      setError(e.message || String(e));
-      onNotify?.("Failed to save calendar", "err");
-    } finally {
-      setLoading(false);
+      onNotify?.(e.message || "Failed to save calendar", "err");
     }
   };
 
-  // Cancel all local edits (re-fetch)
   const cancelAll = async () => {
     setPending({});
     await fetchCalendar();
@@ -157,7 +160,13 @@ export default function CalendarGrid({
   // columns
   const colDefs = React.useMemo<ColDef<CalendarRowDto>[]>(() => {
     return [
-      { headerName: "Date", field: "dates", filter: "agDateColumnFilter", width: 130, editable: false },
+      {
+        headerName: "Date",
+        field: "dates",
+        filter: "agDateColumnFilter",
+        width: 130,
+        editable: false,
+      },
       {
         headerName: "Is Off",
         field: "is_off",
@@ -179,7 +188,9 @@ export default function CalendarGrid({
           return Number.isNaN(n) ? p.oldValue : n;
         },
         cellClass: (p) =>
-          pending[p.data.dates]?.hasOwnProperty("capacity") ? "cell-edited" : "",
+          pending[p.data.dates]?.hasOwnProperty("capacity")
+            ? "cell-edited"
+            : "",
       },
       {
         headerName: "Customised",
@@ -191,12 +202,7 @@ export default function CalendarGrid({
   }, [canWrite, pending]);
 
   const defaultColDef = React.useMemo<ColDef>(() => {
-    return {
-      sortable: true,
-      resizable: true,
-      filter: true,
-      flex: 1,
-    };
+    return { sortable: true, resizable: true, filter: true, flex: 1 };
   }, []);
 
   const onGridReady = (e: any) => {
@@ -204,14 +210,14 @@ export default function CalendarGrid({
     colApi.current = e.columnApi;
   };
 
-  // grid height adjusts to viewport: master and calendar equal heights
-  const [gridHeight, setGridHeight] = React.useState<number>(420);
+  // grid height: master and calendar equal heights, internal scroll, sensible min
+  const [gridHeight, setGridHeight] = React.useState<number>(480);
   React.useEffect(() => {
     const compute = () => {
-      // header (56) + gutter paddings ~32 + top header ~64 + small margins
-      const used = 56 + 32 + 64 + 24;
-      const h = Math.max(260, window.innerHeight - used);
-      setGridHeight(h / 2); // master & calendar split evenly
+      // Header (64) + outer paddings/margins allowance (~48)
+      const used = 64 + 48;
+      const h = Math.max(960, window.innerHeight - used); // ensure enough to split
+      setGridHeight(Math.max(480, Math.floor(h / 2)));
     };
     compute();
     window.addEventListener("resize", compute);
@@ -219,27 +225,39 @@ export default function CalendarGrid({
   }, []);
 
   return (
-    <div className="card">
+    <div className="card h-full">
       <div className="card-header">
         <div className="font-medium text-slate-800">Selected Item (Calendar)</div>
         <div className="flex items-center gap-2">
           <div className="text-sm text-slate-500">
-            {formatYMD(from)} → {formatYMD(to)}
+            {formatYMD(from)} – {formatYMD(to)}
           </div>
           <div className="h-5 w-px bg-slate-300" />
-          <button className="btn" onClick={() => setWeek(0)}>This week</button>
-          <button className="btn" onClick={() => setNext7()}>Next 7 days</button>
-          <button className="btn" onClick={() => setWeek(1)}>Next week</button>
-          <button className="btn" onClick={() => setMonth()}>This month</button>
+          <button className="btn" onClick={() => setWeek(0)}>
+            This week
+          </button>
+          <button className="btn" onClick={() => setNext7()}>
+            Next 7 days
+          </button>
+          <button className="btn" onClick={() => setWeek(1)}>
+            Next week
+          </button>
+          <button className="btn" onClick={() => setMonth()}>
+            This month
+          </button>
           <div className="h-5 w-px bg-slate-300" />
-          <button className="btn-solid disabled:opacity-50"
-                  onClick={saveAll}
-                  disabled={!canWrite || !Object.keys(pending).length}>
+          <button
+            className="btn-solid disabled"
+            onClick={saveAll}
+            disabled={!canWrite || !Object.keys(pending).length}
+          >
             Save
           </button>
-          <button className="btn"
-                  onClick={cancelAll}
-                  disabled={!Object.keys(pending).length}>
+          <button
+            className="btn"
+            onClick={cancelAll}
+            disabled={!Object.keys(pending).length}
+          >
             Cancel
           </button>
         </div>
@@ -252,9 +270,11 @@ export default function CalendarGrid({
       )}
 
       <div className="p-3">
-        <div className="ag-theme-alpine modern-ag" style={{ height: gridHeight }}>
+        <div
+          className="ag-theme-quartz w-full"
+          style={{ height: gridHeight, minHeight: 480 }}
+        >
           <AgGridReact<CalendarRowDto>
-            theme="legacy"
             ref={gridRef as any}
             rowData={rows}
             columnDefs={colDefs}
@@ -265,7 +285,9 @@ export default function CalendarGrid({
             onGridReady={onGridReady}
           />
         </div>
-        {loading && <div className="text-sm text-slate-500 mt-2">Working…</div>}
+        {loading && (
+          <div className="text-sm text-slate-500 mt-2">Working…</div>
+        )}
         {!selectedResource && (
           <div className="text-sm text-slate-500 mt-2">
             Select a resource to view its calendar.
