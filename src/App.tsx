@@ -1,145 +1,84 @@
+// src/App.tsx
 import React from "react";
+import "./index.css";
+
 import Header from "./components/Header";
-import FilterBar from "./components/FilterBar";
-import FilterModal from "./components/FilterModal";
+import ControlRail from "./components/ControlRail";
 import MasterGrid from "./components/MasterGrid";
 import CalendarGrid from "./components/CalendarGrid";
-import Toast from "./components/Toast";
-import { api } from "./api";
+import { Toast, useToast } from "./components/Toast";
 
-/** Small hook to keep both grids in sync height-wise */
-function useGridHeight(offset: number = 220) {
-  const [h, setH] = React.useState(() => Math.max(480, window.innerHeight - offset));
-  React.useEffect(() => {
-    const onResize = () => setH(Math.max(480, window.innerHeight - offset));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [offset]);
-  return h;
+// Top-level: provide Toast context first, then render the actual app content.
+export default function App() {
+  return (
+    <Toast>
+      <AppContent />
+    </Toast>
+  );
 }
 
-export default function App() {
-  // Page filter (resource groups) state
-  const [groups, setGroups] = React.useState<string[]>([]);
-  const [filterOpen, setFilterOpen] = React.useState(false);
+function AppContent() {
+  // Now it's safe to call the hook because we're inside <Toast>
+  const toast = useToast();
 
-  // Selection state coming from Master grid
+  const [filterGroups, setFilterGroups] = React.useState<string[]>([]);
   const [selectedResource, setSelectedResource] = React.useState<string | null>(null);
   const [selectionCount, setSelectionCount] = React.useState(0);
 
-  // Toast state
-  const [toast, setToast] = React.useState<{ id: number; text: string } | null>(null);
-  const pushToast = (text: string) => {
-    const id = Date.now();
-    setToast({ id, text });
-    setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 1600);
+  const canWrite = true; // plug in your real access control when ready
+
+  const openFilter = () => {
+    // If you have a FilterModal/FilterBar, open it here.
+    // For now, just show a small feedback so we know the rail button works.
+    toast.show("Open filter panel", { variant: "info" });
   };
 
-  // Keep both grids visually aligned
-  const gridHeight = useGridHeight(210); // header + paddings
-
-  // When page filter is applied
-  const applyGroups = (gs: string[]) => {
-    setGroups(gs);
-    setSelectedResource(null); // reset calendar until user selects 1 resource
-    setFilterOpen(false);
+  const handleMasterPatched = () => {
+    // Called after master grid saves; keep for future refresh logic if needed
+    toast.show("Saved", { variant: "success" });
   };
-
-  // Clear page filter quickly
-  const clearPageFilter = () => applyGroups([]);
-
-  // Optional: ping API once to ensure backend is reachable (keeps “online” dot accurate in your header)
-  React.useEffect(() => {
-    api.get("/api/resources?groups=").catch(() => {
-      // ignore; the header "online" indicator uses your existing logic
-    });
-  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      {/* Top bar */}
+    <div className="min-h-screen flex flex-col">
+      {/* Header */}
       <Header />
 
-      {/* Filter hint row */}
-      <div className="px-4 md:px-6">
-        <div className="text-[12px] text-slate-500 mt-2 mb-3 flex items-center justify-between">
-          <div>
-            <span className="font-medium text-slate-600">Filter Results</span>
-            <span className="mx-2">•</span>
-            <span>Use the funnel to choose resource groups. The calendar shows only when a single resource is selected.</span>
+      {/* Main area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left control rail (funnel button lives here) */}
+        <ControlRail onOpenFilter={openFilter} />
+
+        {/* Content column */}
+        <main className="flex-1 overflow-auto p-3">
+          {/* Filter bar placeholder — keep space ready if you wire a bar later */}
+          <div className="mb-3" />
+
+          {/* Two-column layout: master (left ~35%) / calendar (right ~65%) */}
+          <div className="grid grid-cols-12 gap-3 h-full">
+            {/* Master grid */}
+            <section className="col-span-12 lg:col-span-5 flex flex-col">
+              <MasterGrid
+                initialGroups={filterGroups}
+                onSelectResource={setSelectedResource}
+                onSelectionCount={setSelectionCount}
+                onMasterPatched={handleMasterPatched}
+                canWrite={canWrite}
+              />
+            </section>
+
+            {/* Calendar grid */}
+            <section className="col-span-12 lg:col-span-7 flex flex-col">
+              <CalendarGrid
+                selectedResource={selectedResource}
+                onNotify={(m, v) => toast.show(m, { variant: v })}
+                onDirty={(isDirty: boolean) => {
+                  // you can surface “Unsaved changes” here if you like
+                }}
+              />
+            </section>
           </div>
-          <div className="text-slate-400">
-            {groups.length === 0 ? "No filter applied" : `${groups.length} group(s)`}
-          </div>
-        </div>
+        </main>
       </div>
-
-      {/* Main content: two columns */}
-      <div className="px-4 md:px-6 pb-6">
-        {/* Filter bar (contains the main Funnel) */}
-        <FilterBar
-          onOpenFilter={() => setFilterOpen(true)}
-          onClearFilter={clearPageFilter}
-          hasFilter={groups.length > 0}
-        />
-
-        <div className="grid grid-cols-12 gap-4">
-          {/* Left: Master grid card */}
-          <div className="col-span-12 lg:col-span-4">
-            <div className="card">
-              <div className="card-header">
-                <div className="font-medium text-slate-800">Filter Results</div>
-                {/* The secondary quick info lives on the right */}
-                <div className="text-xs text-slate-500">
-                  {selectionCount > 1 ? `${selectionCount} selected` : selectedResource || "—"}
-                </div>
-              </div>
-              <div className="p-3">
-                <div className="ag-theme-alpine modern-ag" style={{ height: gridHeight }}>
-                  <MasterGrid
-                    initialGroups={groups}
-                    onSelectResource={(id) => setSelectedResource(id)}
-                    onSelectionCount={(n) => setSelectionCount(n)}
-                    onMasterPatched={() => pushToast("Master saved ✓")}
-                    canWrite={true}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Calendar grid card */}
-          <div className="col-span-12 lg:col-span-8">
-            <div className="card">
-              <div className="card-header">
-                <div className="font-medium text-slate-800">Selected Item — Calendar</div>
-                <div className="text-xs text-slate-500">
-                  {selectedResource ? `Resource: ${selectedResource}` : "Select a single resource to view its calendar."}
-                </div>
-              </div>
-              <div className="p-3">
-                <div className="ag-theme-alpine modern-ag" style={{ height: gridHeight }}>
-                  <CalendarGrid
-                    resource={selectedResource}
-                    onPatched={() => pushToast("Calendar saved ✓")}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Global toast */}
-      {toast && <Toast>{toast.text}</Toast>}
-
-      {/* Page Filter Modal */}
-      <FilterModal
-        open={filterOpen}
-        initial={groups}
-        onApply={applyGroups}
-        onClose={() => setFilterOpen(false)}
-      />
     </div>
   );
 }

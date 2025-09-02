@@ -1,11 +1,15 @@
-import "./gridSetup";
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import App from "./App";
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// ✅ Toast provider
+import Toast from "./components/Toast"; // default export is the Provider component
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <Toast>
+      <App />
+    </Toast>
+  </React.StrictMode>
+);
