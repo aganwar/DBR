@@ -32,7 +32,7 @@ export default function Header() {
 
           <div className="leading-tight">
             <div className="text-slate-900 font-semibold text-[15px]">DBR-AI</div>
-            <div className="text-slate-500 text-[12px]">Scheduled Resources</div>
+            <div className="text-slate-500 text-[12px]">Resource Planner</div>
           </div>
         </div>
 
