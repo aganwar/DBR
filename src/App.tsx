@@ -6,11 +6,11 @@ import Header from "./components/Header";
 import ControlRail from "./components/ControlRail";
 import MasterGrid from "./components/MasterGrid";
 import CalendarGrid from "./components/CalendarGrid";
+import FilterModal from "./components/FilterModal";
 import { Toast, useToast } from "./components/Toast";
-import type { ResourceDto } from "./components/MasterGrid";
 
-// Top-level: provide Toast context first, then render the actual app content.
 export default function App() {
+  // Provide toast context at the top
   return (
     <Toast>
       <AppContent />
@@ -19,65 +19,91 @@ export default function App() {
 }
 
 function AppContent() {
-  // Now it's safe to call the hook because we're inside <Toast>
   const toast = useToast();
 
-  const [selectedResource, setSelectedResource] = React.useState<string | null>(null);
+  // Page state
+  const [filterOpen, setFilterOpen] = React.useState(false);
+  const [filterGroups, setFilterGroups] = React.useState<string[]>([]);
+  const [selectedResource, setSelectedResource] = React.useState<string | number | null>(null);
   const [selectionCount, setSelectionCount] = React.useState(0);
 
-  // Open filter rail action (funnel button)
-  const openFilter = () => {
-    // If you have a FilterModal/FilterBar, open it here.
-    toast.show("Open filter panel", { variant: "info" });
+  const canWrite = true; // future: wire to auth/roles
+
+  // Control rail (left) opens the filter modal
+  const openFilter = () => setFilterOpen(true);
+
+  // Apply/Clear from modal
+  const applyGroups = (groups: string[]) => {
+    // NOTE: empty [] means CLEAR filter → clear both grids
+    setFilterGroups(groups);
+    // Clearing selection on any filter change avoids stale calendars
+    setSelectedResource(null);
+    setSelectionCount(0);
+
+    if (groups.length === 0) {
+      toast.show("Filter cleared", { variant: "info" });
+    } else {
+      toast.show(`Filter applied (${groups.length} group${groups.length > 1 ? "s" : ""})`, {
+        variant: "info",
+      });
+    }
   };
 
-  // Map MasterGrid selection -> CalendarGrid selectedResource
-  const handleSelectionChange = (rows: ResourceDto[]) => {
-    setSelectionCount(rows.length);
-    setSelectedResource(rows[0]?.resourceGroup ?? null);
+  const handleMasterPatched = () => {
+    toast.show("Saved", { variant: "success" });
   };
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
+      {/* Top header with icon + title */}
       <Header />
 
-      {/* Main area */}
+      {/* Main area: left rail + content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left control rail (funnel button lives here) */}
+        {/* Left control rail (funnel) */}
         <ControlRail onOpenFilter={openFilter} />
 
         {/* Content column */}
         <main className="flex-1 overflow-auto p-3">
-          {/* Space for a future filter bar */}
-          <div className="mb-3" />
-
-          {/* Two-column layout: master (left ~35%) / calendar (right ~65%) */}
+          {/* 12-col content grid: master (5) / calendar (7) */}
           <div className="grid grid-cols-12 gap-3 h-full">
-            {/* Master grid */}
+            {/* Master grid (left) */}
             <section className="col-span-12 lg:col-span-5 flex flex-col">
-              <MasterGrid onSelectionChange={handleSelectionChange} />
-              {/* You can surface selectionCount somewhere if you want */}
-              {selectionCount > 0 && (
-                <div className="text-xs text-slate-500 mt-2">
-                  Selected: {selectionCount}
-                </div>
-              )}
+              <div className="card flex-1 flex flex-col">
+                <MasterGrid
+                  initialGroups={filterGroups}
+                  onSelectResource={setSelectedResource}
+                  onSelectionCount={setSelectionCount}
+                  onMasterPatched={handleMasterPatched}
+                  canWrite={canWrite}
+                />
+              </div>
             </section>
 
-            {/* Calendar grid */}
+            {/* Calendar grid (right) */}
             <section className="col-span-12 lg:col-span-7 flex flex-col">
-              <CalendarGrid
-                selectedResource={selectedResource}
-                onNotify={(m, v) => toast.show(m, { variant: v })}
-                onDirty={(isDirty: boolean) => {
-                  // If you want, show an "Unsaved changes" badge somewhere.
-                }}
-              />
+              <div className="card flex-1 flex flex-col">
+                <CalendarGrid
+                  selectedResource={selectedResource}
+                  onNotify={(m, v) => toast.show(m, { variant: v })}
+                  onDirty={(isDirty: boolean) => {
+                    // optional: surface “Unsaved changes” badge if you want
+                  }}
+                  canWrite={canWrite}
+                />
+              </div>
             </section>
           </div>
         </main>
       </div>
+
+      {/* Filter Modal */}
+      <FilterModal
+        open={filterOpen}
+        initial={filterGroups}
+        onApply={applyGroups}
+        onClose={() => setFilterOpen(false)}
+      />
     </div>
   );
 }
