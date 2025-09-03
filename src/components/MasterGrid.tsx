@@ -5,7 +5,6 @@ import type {
   ColDef,
   CellClassParams,
   GridReadyEvent,
-  RowSelectedEvent,
   CellEditRequestEvent,
 } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
@@ -17,23 +16,15 @@ import { fromResource, toResource } from "../types";
 
 /** Props sent from App (page orchestrator) */
 type Props = {
-  /** Page-level applied groups (filter). Empty array means “no filter” (show nothing). */
   initialGroups: string[];
-  /** When a single row is selected, we send its id; when 0 or many, send null. */
   onSelectResource: (id: string | number | null) => void;
-  /** Keep App informed of how many rows are selected (for small UI hints). */
   onSelectionCount: (n: number) => void;
-  /** Called after a successful save so App can toast, etc. */
   onMasterPatched?: () => void;
-  /** Future access control; if false, turn off editing/add/delete. */
   canWrite?: boolean;
 };
 
 /** Local row shape we show in the grid (camelCase) */
-type RowModel = Resource & {
-  /** true when this is a newly inserted row that hasn’t been saved yet */
-  __isNew?: boolean;
-};
+type RowModel = Resource & { __isNew?: boolean };
 
 /** Track dirty cells per (rowId -> set of colIds) */
 type DirtyMap = Map<string | number, Set<string>>;
@@ -50,11 +41,8 @@ export default function MasterGrid({
   const [rows, setRows] = React.useState<RowModel[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  // server-driven grid config (optional; we fall back to sensible defaults)
   const [gridConfig, setGridConfig] = React.useState<GridConfigDto | null>(null);
 
-  // changed cells tracker
   const dirtyRef = React.useRef<DirtyMap>(new Map());
 
   // fetch data whenever groups change
@@ -65,33 +53,28 @@ export default function MasterGrid({
         setLoading(true);
         setError(null);
 
-        // If the page filter is explicitly empty => show nothing.
+        // explicitly cleared filter => show nothing
         if (initialGroups && initialGroups.length === 0) {
           setRows([]);
           clearDirty();
           onSelectResource(null);
           onSelectionCount(0);
-          if (!alive) return;
-          setLoading(false); // ensure we’re not stuck in “Working…”
+          setLoading(false);
           return;
         }
 
-        // load grid config (columns/editability)
         const cfg = await api.get<GridConfigDto>("/api/grid-config/scheduled-resources-master");
         if (!alive) return;
         setGridConfig(cfg.data);
 
-        // fetch resources for selected groups
         const param = (initialGroups ?? []).join(",");
         const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
         if (!alive) return;
 
-        // map server -> UI
         const mapped: RowModel[] = (res.data || []).map(toResource);
         setRows(mapped);
         clearDirty();
 
-        // clear selection (new data set)
         onSelectResource(null);
         onSelectionCount(0);
       } catch (e: any) {
@@ -108,20 +91,16 @@ export default function MasterGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialGroups)]);
 
-  /** Reset the dirty tracker */
   const clearDirty = () => {
     dirtyRef.current.clear();
-    // Repaint grid to remove dirty highlighting (guard API)
     gridRef.current?.api?.redrawRows();
   };
 
-  /** Is the specific cell marked dirty? */
   const isDirtyCell = (rowId: string | number | undefined, colId: string) => {
     if (rowId === undefined || rowId === null) return false;
     return !!dirtyRef.current.get(rowId)?.has(colId);
   };
 
-  /** Mark/unmark a cell as dirty */
   const markDirtyCell = (rowId: string | number | undefined, colId: string, dirty: boolean) => {
     if (rowId === undefined || rowId === null) return;
     const map = dirtyRef.current;
@@ -132,7 +111,6 @@ export default function MasterGrid({
     else map.delete(rowId);
   };
 
-  /** Add a new blank row and put grid into edit mode on the first mandatory cell */
   const addNew = () => {
     if (!canWrite) return;
     const blank: RowModel = {
@@ -143,7 +121,6 @@ export default function MasterGrid({
       __isNew: true,
     };
     setRows((prev) => [blank, ...prev]);
-    // mark required field visually as dirty until user fills
     markDirtyCell(blank.id!, "resourceGroup", true);
     gridRef.current?.api?.ensureIndexVisible(0);
     setTimeout(() => {
@@ -154,7 +131,6 @@ export default function MasterGrid({
     }, 0);
   };
 
-  /** Delete selected rows on server (only non-new rows with real ids) */
   const delSelected = async () => {
     if (!canWrite) return;
     const apiGrid = gridRef.current?.api;
@@ -163,10 +139,8 @@ export default function MasterGrid({
       .map((r) => r.id)
       .filter((id) => typeof id === "number" || typeof id === "string");
     if (realIds.length === 0) {
-      // locally remove any unsaved new rows that are selected
       if (selected.length) {
         setRows((prev) => prev.filter((r) => !selected.some((s) => s.id === r.id)));
-        // cleanup dirty map
         selected.forEach((s) => dirtyRef.current.delete(s.id as any));
         apiGrid?.deselectAll?.();
         onSelectionCount(0);
@@ -177,7 +151,6 @@ export default function MasterGrid({
     setError(null);
     try {
       await api.post("/api/resources/delete", { ids: realIds });
-      // refresh
       const param = (initialGroups ?? []).join(",");
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       setRows((res.data || []).map(toResource));
@@ -192,15 +165,10 @@ export default function MasterGrid({
     }
   };
 
-  /** Persist changed/new rows */
   const save = async () => {
     if (!canWrite) return;
-    // Build list of changed rows (by rowId)
     const changedIds = Array.from(dirtyRef.current.keys());
-    // If a newly added row has only the required field dirty, still include it
     const candidates = rows.filter((r) => changedIds.includes(r.id as any) || r.__isNew);
-
-    // Validate required fields
     for (const r of candidates) {
       if (!r.resourceGroup || !r.resourceGroup.trim()) {
         setError("Please fill required fields before saving.");
@@ -213,7 +181,6 @@ export default function MasterGrid({
     try {
       const payload: ResourceDto[] = candidates.map(fromResource);
       await api.post<ResourceDto[]>("/api/resources/save", payload);
-      // Refresh from server to ensure client matches DB
       const param = (initialGroups ?? []).join(",");
       const fresh = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       setRows((fresh.data || []).map(toResource));
@@ -226,7 +193,6 @@ export default function MasterGrid({
     }
   };
 
-  /** Cancel: discard unsaved edits and reload from API */
   const cancel = async () => {
     setLoading(true);
     setError(null);
@@ -245,44 +211,33 @@ export default function MasterGrid({
     }
   };
 
-  /** Cell class rules for:
-   *  - dirty highlight
-   *  - required-missing (for new/edited rows)
-   */
-  const cellClass = (p: CellClassParams<RowModel>) => {
-    const col = p.colDef.field!;
-    const id = p.data?.id!;
-    const classes: string[] = [];
-    if (isDirtyCell(id, col)) classes.push("bg-emerald-50"); // edited feedback
-    if (p.data?.__isNew && col === "resourceGroup" && !p.value) classes.push("bg-amber-50");
-    return classes.join(" ");
-  };
-
-  /** Handle edits: mark dirty */
-  const onCellEditRequest = (e: CellEditRequestEvent<RowModel>) => {
-    // Update our local rows state
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.id !== e.data.id) return r;
-        const next = { ...r, [e.colDef.field as string]: e.newValue };
-        return next;
-      })
-    );
-    markDirtyCell(e.data.id!, e.colDef.field!, e.newValue !== e.oldValue);
-    // Repaint just this row for performance
-    gridRef.current?.api?.refreshCells({ rowNodes: [e.node], force: true });
-  };
-
-  /** Selection change: single selection -> send id; multiple/none -> null */
-  const onRowSelected = (e: RowSelectedEvent<RowModel>) => {
-    const apiGrid = e.api;
-    const sel = apiGrid.getSelectedRows();
+  const onSelectionChanged = () => {
+    const sel = gridRef.current?.api?.getSelectedRows?.() ?? [];
     onSelectionCount(sel.length);
     if (sel.length === 1) onSelectResource(sel[0].id ?? null);
     else onSelectResource(null);
   };
 
-  /** Grid setup */
+  const cellClass = (p: CellClassParams<RowModel>) => {
+    const col = p.colDef.field!;
+    const id = p.data?.id!;
+    const classes: string[] = [];
+    if (isDirtyCell(id, col)) classes.push("bg-emerald-50");
+    if (p.data?.__isNew && col === "resourceGroup" && !p.value) classes.push("bg-amber-50");
+    return classes.join(" ");
+  };
+
+  const onCellEditRequest = (e: CellEditRequestEvent<RowModel>) => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== e.data.id) return r;
+        return { ...r, [e.colDef.field as string]: e.newValue };
+      })
+    );
+    markDirtyCell(e.data.id!, e.colDef.field!, e.newValue !== e.oldValue);
+    gridRef.current?.api?.refreshCells({ rowNodes: [e.node], force: true });
+  };
+
   const defaultColDef: ColDef<RowModel> = {
     editable: canWrite,
     sortable: true,
@@ -309,7 +264,6 @@ export default function MasterGrid({
         ];
 
   const onGridReady = (e: GridReadyEvent<RowModel>) => {
-    // size columns to fit initially
     e.api.sizeColumnsToFit();
   };
 
@@ -346,9 +300,9 @@ export default function MasterGrid({
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             animateRows
-            rowSelection="multiple"
+            rowSelection="single"
             suppressRowClickSelection={false}
-            onRowSelected={onRowSelected}
+            onSelectionChanged={onSelectionChanged}
             readOnlyEdit={false}
             editType="fullRow"
             onCellEditRequest={onCellEditRequest}

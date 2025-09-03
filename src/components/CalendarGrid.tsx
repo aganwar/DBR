@@ -11,21 +11,17 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 
 import { api } from "../api";
-import {
-  CalendarRowDto,
-  CalendarPatchDto,
-} from "../types";
+import type { CalendarRowDto, CalendarPatchDto } from "../types";
 import {
   thisWeek,
   next7Days,
   nextWeek,
   thisMonth,
   allRange,
-  ymd,
 } from "../utils/dates";
 
 type Props = {
-  /** Selected resource id or code; when null, show helpful empty state */
+  /** Selected resource id or code; when null we still render headers with no rows */
   selectedResource: string | number | null;
   /** Toast helper: (message, variant) where variant is "success" | "info" | "error" | undefined */
   onNotify?: (message: string, variant?: "success" | "info" | "error") => void;
@@ -76,9 +72,12 @@ export default function CalendarGrid({
     let alive = true;
 
     async function load() {
+      // If nothing selected, show empty grid (headers visible)
       if (!selectedResource) {
         setRows([]);
         setPending({});
+        setError(null);
+        setLoading(false);
         return;
       }
       setLoading(true);
@@ -117,14 +116,14 @@ export default function CalendarGrid({
       sortable: true,
       resizable: true,
       filter: true,
-      editable: canWrite,
+      editable: canWrite && !!selectedResource, // disable edits until a resource is selected
       cellClass: (p: CellClassParams<RowModel>) => {
         const classes: string[] = [];
         if (pending[p.data?.date || ""]) classes.push("bg-emerald-50");
         return classes.join(" ");
       },
     }),
-    [canWrite, pending]
+    [canWrite, selectedResource, pending]
   );
 
   const colDefs = React.useMemo<ColDef<RowModel>[]>(() => {
@@ -196,7 +195,7 @@ export default function CalendarGrid({
     });
 
     // quick visual flash
-    gridRef.current?.api.flashCells({ rowNodes: [e.node], columns: [e.column] });
+    gridRef.current?.api?.flashCells({ rowNodes: [e.node], columns: [e.column] });
   };
 
   const save = async () => {
@@ -272,30 +271,15 @@ export default function CalendarGrid({
   };
   const setRangeAll = () => {
     const r = allRange();
-    setFrom(r.from);
-    setTo(r.to);
+    setFrom(r.from ?? "");
+    setTo(r.to ?? "");
   };
 
   const onGridReady = (e: GridReadyEvent<RowModel>) => {
     e.api.sizeColumnsToFit();
   };
 
-  // Empty state when nothing is selected
-  if (!selectedResource) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="card-header">
-          <div className="font-medium text-slate-800">Selected Item — Calendar</div>
-          <div className="text-xs text-slate-500">
-            Select a single resource from the Master grid to view its calendar.
-          </div>
-        </div>
-        <div className="p-6 text-sm text-slate-500">
-          No resource selected.
-        </div>
-      </div>
-    );
-  }
+  const showEmptyHint = !selectedResource;
 
   return (
     <div className="flex flex-col h-full">
@@ -309,14 +293,14 @@ export default function CalendarGrid({
           <button className="btn" onClick={setRangeThisMonth}>This month</button>
           <button className="btn-ghost" onClick={setRangeAll}>All</button>
           <div className="text-xs text-slate-500 ml-2">
-            Range: {from} → {to}
+            Range: {from || "—"} → {to || "—"}
           </div>
         </div>
       </div>
 
       {error && <div className="px-4 py-2 text-rose-700 bg-rose-50 border-t border-rose-200">{error}</div>}
 
-      {/* Grid */}
+      {/* Grid (always rendered so headers are visible even with no rows/selection) */}
       <div className="p-3 grow">
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
@@ -331,15 +315,24 @@ export default function CalendarGrid({
             onGridReady={onGridReady}
           />
         </div>
+
+        {/* Actions */}
         <div className="flex items-center gap-2 mt-3">
           <button className="btn" onClick={save} disabled={!canWrite || !dirty || !selectedResource}>
             Save
           </button>
-          <button className="btn-ghost" onClick={cancel} disabled={!dirty}>
+          <button className="btn-ghost" onClick={cancel} disabled={!dirty || !selectedResource}>
             Cancel
           </button>
           {loading && <span className="text-sm text-slate-500">Working…</span>}
         </div>
+
+        {/* Hint */}
+        {showEmptyHint && (
+          <div className="mt-2 text-xs text-slate-500">
+            Select a single resource from the Master grid to load its calendar.
+          </div>
+        )}
       </div>
     </div>
   );
