@@ -8,21 +8,8 @@ export function formatYMD(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** Alias some files used earlier */
-export const fmtYMD = formatYMD;
-
-/** Parse a YYYY-MM-DD string to a Date (local time). Returns null if invalid. */
-export function parseYMD(s?: string | null): Date | null {
-  if (!s) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const dt = new Date(y, mo - 1, d);
-  // validate round-trip to avoid 2025-02-31 becoming Mar 3rd, etc.
-  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null;
-}
+/** Alias kept for any older imports */
+export const ymd = formatYMD;
 
 /** Today at local midnight */
 export function today(): Date {
@@ -32,22 +19,22 @@ export function today(): Date {
 
 /** Add n days (can be negative) */
 export function addDays(d: Date, n: number): Date {
-  const t = new Date(d);
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   t.setDate(t.getDate() + n);
   return t;
 }
 
 /** Start of this week (Mon as first day) */
-export function startOfThisWeek(): Date {
-  const t = today();
+export function startOfThisWeek(ref?: Date): Date {
+  const t = ref ? new Date(ref) : today();
   const dow = t.getDay(); // 0=Sun..6=Sat
   const delta = dow === 0 ? -6 : 1 - dow; // move back to Monday
   return addDays(t, delta);
 }
 
 /** End of this week (Sun as last day) */
-export function endOfThisWeek(): Date {
-  return addDays(startOfThisWeek(), 6);
+export function endOfThisWeek(ref?: Date): Date {
+  return addDays(startOfThisWeek(ref), 6);
 }
 
 /** Start of month for a given date */
@@ -72,13 +59,40 @@ export function rangeYMD(from: Date, to: Date): string[] {
   return out;
 }
 
-/** Convenience wrappers some files import */
-export const toYMD = formatYMD;
-export const fromYMD = parseYMD;
+/* ------------------------------------------------------------------------- */
+/*  Public ranges EXPECTED by CalendarGrid                                   */
+/* ------------------------------------------------------------------------- */
 
-/** Clamp a date to [min, max] */
-export function clampDate(d: Date, min: Date, max: Date): Date {
-  if (d < min) return new Date(min);
-  if (d > max) return new Date(max);
-  return d;
+/** Current week (Mon..Sun) relative to today (or a ref date) */
+export function thisWeek(ref?: Date): { from: string; to: string } {
+  const fromD = startOfThisWeek(ref);
+  const toD = endOfThisWeek(ref);
+  return { from: formatYMD(fromD), to: formatYMD(toD) };
+}
+
+/** Next 7 days including today: [today .. today+6] */
+export function next7Days(ref?: Date): { from: string; to: string } {
+  const base = ref ? new Date(ref) : today();
+  return { from: formatYMD(base), to: formatYMD(addDays(base, 6)) };
+}
+
+/** Next calendar week (Mon..Sun) after the current one */
+export function nextWeek(ref?: Date): { from: string; to: string } {
+  const startNext = addDays(startOfThisWeek(ref), 7);
+  const endNext = addDays(startNext, 6);
+  return { from: formatYMD(startNext), to: formatYMD(endNext) };
+}
+
+/** Current calendar month */
+export function thisMonth(ref?: Date): { from: string; to: string } {
+  const base = ref ? new Date(ref) : today();
+  return {
+    from: formatYMD(startOfMonth(base)),
+    to: formatYMD(endOfMonth(base)),
+  };
+}
+
+/** Open range (no constraints) for the “All” button */
+export function allRange(): { from?: string; to?: string } {
+  return {};
 }
