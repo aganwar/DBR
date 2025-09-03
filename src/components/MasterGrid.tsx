@@ -12,13 +12,8 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 
 import { api } from "../api";
-import {
-  ResourceDto,
-  GridConfigDto,
-  fromResource,
-  toResource,
-  Resource,
-} from "../types";
+import type { ResourceDto, GridConfigDto, Resource } from "../types";
+import { fromResource, toResource } from "../types";
 
 /** Props sent from App (page orchestrator) */
 type Props = {
@@ -213,7 +208,7 @@ export default function MasterGrid({
     setError(null);
     try {
       const payload: ResourceDto[] = candidates.map(fromResource);
-      const res = await api.post<ResourceDto[]>("/api/resources/save", payload);
+      await api.post<ResourceDto[]>("/api/resources/save", payload);
       // Refresh from server to ensure client matches DB
       const param = (initialGroups ?? []).join(",");
       const fresh = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
@@ -353,7 +348,6 @@ export default function MasterGrid({
             onRowSelected={onRowSelected}
             readOnlyEdit={false}
             editType="fullRow"
-            // AG Grid v31+ recommends onCellEditRequest for controlled edits
             onCellEditRequest={onCellEditRequest}
             onGridReady={onGridReady}
           />
