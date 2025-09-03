@@ -288,7 +288,7 @@ export default function CalendarGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
-            theme="legacy"               /* ✅ fix AG Grid #239 (use CSS file themes) */
+            theme="legacy"               /* using CSS file themes */
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
