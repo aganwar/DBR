@@ -128,12 +128,7 @@ export default function CalendarGrid({
 
   const colDefs = React.useMemo<ColDef<RowModel>[]>(() => {
     return [
-      {
-        field: "date",
-        headerName: "Date",
-        editable: false,
-        width: 140,
-      },
+      { field: "date", headerName: "Date", editable: false, width: 140 },
       {
         field: "capacity",
         headerName: "Capacity",
@@ -145,18 +140,8 @@ export default function CalendarGrid({
           return Number.isFinite(n) ? n : p.oldValue ?? null;
         },
       },
-      {
-        field: "is_off",
-        headerName: "Off day",
-        cellRenderer: "agCheckboxCellRenderer",
-        width: 120,
-      },
-      {
-        field: "is_customised",
-        headerName: "Customised",
-        editable: false,
-        width: 130,
-      },
+      { field: "is_off", headerName: "Off day", cellRenderer: "agCheckboxCellRenderer", width: 120 },
+      { field: "is_customised", headerName: "Customised", editable: false, width: 130 },
     ];
   }, []);
 
@@ -194,7 +179,6 @@ export default function CalendarGrid({
       return next;
     });
 
-    // quick visual flash
     gridRef.current?.api?.flashCells({ rowNodes: [e.node], columns: [e.column] });
   };
 
@@ -206,7 +190,6 @@ export default function CalendarGrid({
       const body: CalendarPatchDto = { changesByDate: pending };
       await api.patch(`/api/calendar/${encodeURIComponent(String(selectedResource))}`, body);
       onNotify?.("Calendar saved", "success");
-      // refetch to normalise client with DB
       const res = await api.get<CalendarRowDto[]>(
         `/api/calendar/${encodeURIComponent(String(selectedResource))}?from=${from}&to=${to}`
       );
@@ -305,6 +288,7 @@ export default function CalendarGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
+            theme="legacy"               /* ✅ fix AG Grid #239 (use CSS file themes) */
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}

@@ -16,10 +16,15 @@ import { fromResource, toResource } from "../types";
 
 /** Props sent from App (page orchestrator) */
 type Props = {
+  /** Page-level applied groups (filter). Empty array means “no filter” (show nothing). */
   initialGroups: string[];
+  /** When a single row is selected, we send its id (or fallback key) or null. */
   onSelectResource: (id: string | number | null) => void;
+  /** Keep App informed of how many rows are selected (for small UI hints). */
   onSelectionCount: (n: number) => void;
+  /** Called after a successful save so App can toast, etc. */
   onMasterPatched?: () => void;
+  /** Future access control; if false, turn off editing/add/delete. */
   canWrite?: boolean;
 };
 
@@ -211,11 +216,20 @@ export default function MasterGrid({
     }
   };
 
+  /** Always send a usable key to Calendar:
+   *  - Prefer row.id if present
+   *  - Else fall back to row.resourceGroup
+   */
   const onSelectionChanged = () => {
     const sel = gridRef.current?.api?.getSelectedRows?.() ?? [];
     onSelectionCount(sel.length);
-    if (sel.length === 1) onSelectResource(sel[0].id ?? null);
-    else onSelectResource(null);
+    if (sel.length === 1) {
+      const row = sel[0];
+      const key = (row.id ?? row.resourceGroup) as string | number | undefined;
+      onSelectResource(key ?? null);
+    } else {
+      onSelectResource(null);
+    }
   };
 
   const cellClass = (p: CellClassParams<RowModel>) => {
@@ -254,7 +268,7 @@ export default function MasterGrid({
           editable: canWrite && (c.editable ?? true),
           hide: c.hide ?? false,
           width: c.width,
-          type: c.type as any,
+          type: (c.type as any) || undefined,
           cellClass: cellClass,
         }))
       : [
@@ -296,12 +310,12 @@ export default function MasterGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
+            theme="legacy"                                  // ✅ fix AG Grid #239 (use CSS file themes)
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             animateRows
-            rowSelection="single"
-            suppressRowClickSelection={false}
+            rowSelection={{ mode: "single", enableClickSelection: true }} // ✅ modern API (no deprecation warning)
             onSelectionChanged={onSelectionChanged}
             readOnlyEdit={false}
             editType="fullRow"
@@ -321,7 +335,6 @@ function toField(serverField: string): keyof RowModel {
   if (serverField === "is_constraint") return "isConstraint";
   return (serverField as any) as keyof RowModel;
 }
-
 function pretty(field: string) {
   if (field === "resource_group") return "Resource Group";
   if (field === "is_constraint") return "Is Constraint";
