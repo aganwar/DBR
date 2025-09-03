@@ -1,170 +1,194 @@
+// src/components/FilterModal.tsx
 import React from "react";
 import { api } from "../api";
 
 type Props = {
+  /** Whether the modal is visible */
   open: boolean;
-  /** Currently applied groups (from App). Used to seed selection on open. */
+  /** Initially selected groups when opening the modal */
   initial: string[];
-  /** Called with the final selection when user clicks Apply. */
+  /** Called with selected groups when user clicks Apply */
   onApply: (groups: string[]) => void;
-  /** Close without changing selection. */
+  /** Close the modal (called by X or after Apply/Clear) */
   onClose: () => void;
 };
 
 export default function FilterModal({ open, initial, onApply, onClose }: Props) {
   const [allGroups, setAllGroups] = React.useState<string[]>([]);
-  const [working, setWorking] = React.useState<boolean>(false);
-  const [err, setErr] = React.useState<string | null>(null);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set(initial));
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  // selection the user is editing inside the modal
-  const [selected, setSelected] = React.useState<string[]>([]);
-  const [query, setQuery] = React.useState<string>("");
-
-  // reconcile selected with incoming initial + fetched allGroups
+  // Refetch groups each time the modal opens
   React.useEffect(() => {
     if (!open) return;
-    let alive = true;
-
-    (async () => {
-      try {
-        setWorking(true);
-        setErr(null);
-        // always fetch fresh on open, so new resources appear
-        const res = await api.get<string[]>("/api/resource-groups");
-        const fresh = res.data ?? [];
-        if (!alive) return;
-
-        setAllGroups(fresh);
-
-        // If nothing applied yet -> default to "all"
-        const base = initial && initial.length ? initial : fresh;
-
-        // Reconcile: keep only groups that still exist
-        const reconciled = base.filter(g => fresh.includes(g));
-        setSelected(reconciled);
-      } catch (e: any) {
-        setErr(e?.message || "Failed to load resource groups");
-        // still seed selection from initial in case of network issues
-        setSelected(initial ?? []);
-        setAllGroups(prev => prev.length ? prev : []);
-      } finally {
-        if (!alive) return;
-        setWorking(false);
-      }
-    })();
-
-    return () => { alive = false; };
+    setSelected(new Set(initial));
+    setQuery("");
+    setError(null);
+    setLoading(true);
+    api
+      .get<string[]>("/api/resource-groups")
+      .then((res) => {
+        setAllGroups(res.data || []);
+      })
+      .catch((e: any) => setError(e?.message || String(e)))
+      .finally(() => setLoading(false));
   }, [open, initial]);
 
-  // keyboard shortcuts: Esc closes, Enter applies
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        e.preventDefault();
-        onApply(selected);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, selected, onApply, onClose]);
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allGroups;
+    return allGroups.filter((g) => g.toLowerCase().includes(q));
+  }, [query, allGroups]);
+
+  const toggle = (g: string) => {
+    const next = new Set(selected);
+    if (next.has(g)) next.delete(g);
+    else next.add(g);
+    setSelected(next);
+  };
+
+  const selectAll = () => setSelected(new Set(allGroups));
+  const clearSelection = () => setSelected(new Set());
+
+  const apply = () => {
+    onApply(Array.from(selected));
+    onClose();
+  };
+
+  // Important: Clear in the dialog means “no groups”
+  const clearAndClose = () => {
+    onApply([]); // explicit empty array, drives clearing Master + Calendar
+    onClose();
+  };
 
   if (!open) return null;
 
-  const toggle = (g: string, checked: boolean) => {
-    setSelected(prev => {
-      if (checked) return prev.includes(g) ? prev : [...prev, g];
-      return prev.filter(x => x !== g);
-    });
-  };
-
-  const selectAll = () => setSelected([...allGroups]);
-  const clearAll = () => setSelected([]);
-
-  const visible = query.trim()
-    ? allGroups.filter(g => g.toLowerCase().includes(query.trim().toLowerCase()))
-    : allGroups;
-
   return (
-    <div className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0 flex items-start justify-center pt-20 px-3">
-        <div className="w-[760px] max-w-[96vw] rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="px-5 py-3 border-b bg-gradient-to-b from-white to-slate-50 flex items-center justify-between">
-            <div className="font-medium text-slate-800">Choose Resource Groups</div>
-            <button className="btn-ghost" onClick={onClose} title="Close">Close</button>
-          </div>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="filter-title"
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
-          {/* Body */}
-          <div className="px-5 py-4">
-            {/* Actions row */}
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <button className="btn" onClick={selectAll}>Select all</button>
-              <button className="btn" onClick={clearAll}>Clear</button>
-              <div className="text-xs text-slate-500 ml-1">
-                {selected.length} / {allGroups.length} selected
-              </div>
+      {/* Panel */}
+      <div className="relative z-10 w-[min(680px,96vw)] rounded-xl bg-white border border-slate-200 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <h2 id="filter-title" className="text-base font-semibold text-slate-800">
+            Filter — Resource Groups
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="p-2 rounded-md hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+          </button>
+        </div>
 
-              <div className="ml-auto">
-                <input
-                  aria-label="Search resource groups"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="h-8 px-3 text-sm rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  placeholder="Search…"
-                  disabled={working}
-                />
-              </div>
-            </div>
-
-            {/* Errors / loading */}
-            {err && (
-              <div className="text-rose-700 bg-rose-50 border border-rose-200 px-3 py-2 rounded mb-3">
-                {err}
-              </div>
-            )}
-            {working && (
-              <div className="text-sm text-slate-500 mb-2">Loading…</div>
-            )}
-
-            {/* Checkbox list */}
-            <div className="border rounded-xl overflow-hidden">
-              <div className="max-h-[50vh] overflow-auto divide-y">
-                {visible.length === 0 ? (
-                  <div className="px-4 py-8 text-sm text-slate-500">No resource groups.</div>
-                ) : visible.map(g => {
-                  const checked = selected.includes(g);
-                  return (
-                    <label
-                      key={g}
-                      className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
-                        checked ? "bg-indigo-50" : "hover:bg-slate-50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="accent-indigo-600"
-                        checked={checked}
-                        onChange={(e) => toggle(g, e.target.checked)}
-                      />
-                      <span className="text-sm text-slate-800">{g}</span>
-                    </label>
-                  );
-                })}
+        {/* Body */}
+        <div className="px-4 pt-3 pb-4">
+          {/* Controls row */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <div className="relative">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search groups…"
+                className="h-9 w-[240px] rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+              />
+              <div className="pointer-events-none absolute right-2 top-2.5 text-slate-400">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M11 19a8 8 0 100-16 8 8 0 000 16zm7 2l-3.5-3.5" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="px-5 py-3 border-t bg-gradient-to-t from-white to-slate-50 flex items-center justify-end gap-2">
-            <button className="btn" onClick={onClose}>Cancel</button>
+            <div className="h-6 w-px bg-slate-200" />
+
             <button
-              className="btn-solid"
-              onClick={() => onApply(selected)}
-              disabled={working}
+              type="button"
+              onClick={selectAll}
+              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              disabled={loading || allGroups.length === 0}
+              title="Select all groups"
             >
-              Apply filter
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              disabled={loading || selected.size === 0}
+              title="Clear current selection"
+            >
+              Clear selection
+            </button>
+          </div>
+
+          {/* Status / error */}
+          {loading && <div className="text-sm text-slate-500">Loading groups…</div>}
+          {error && <div className="text-sm text-rose-700">Error: {error}</div>}
+
+          {/* List */}
+          {!loading && !error && (
+            <div className="max-h-[42vh] overflow-auto rounded-md border border-slate-200">
+              {filtered.length === 0 ? (
+                <div className="p-3 text-sm text-slate-500">No groups found.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {filtered.map((g) => {
+                    const checked = selected.has(g);
+                    return (
+                      <li key={g} className="flex items-center gap-3 px-3 py-2">
+                        <input
+                          id={`chk-${g}`}
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggle(g)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        <label htmlFor={`chk-${g}`} className="text-sm text-slate-800">
+                          {g}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
+          <div className="text-xs text-slate-500">
+            {selected.size} selected {query ? `• filtered (${filtered.length})` : ""}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearAndClose}
+              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              title="Clear filter and close"
+            >
+              Clear filter
+            </button>
+            <button
+              type="button"
+              onClick={apply}
+              className="h-9 px-3 rounded-md border text-sm text-white bg-slate-800 hover:bg-slate-900"
+              disabled={loading}
+              title="Apply selected groups"
+            >
+              Apply
             </button>
           </div>
         </div>
