@@ -216,6 +216,12 @@ export default function MasterGrid({
     }
   };
 
+  /** Provide a stable row id so selection & updates behave predictably. */
+  const getRowId = React.useCallback((params: { data: RowModel }) => {
+    const key = params.data?.id ?? params.data?.resourceGroup;
+    return String(key ?? "");
+  }, []);
+
   /** Always send a usable key to Calendar:
    *  - Prefer row.id if present
    *  - Else fall back to row.resourceGroup
@@ -310,12 +316,14 @@ export default function MasterGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
-            theme="legacy"                                  // ✅ fix AG Grid #239 (use CSS file themes)
+            theme="legacy"  /* using CSS file themes, avoids Theming API warning */
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             animateRows
-            rowSelection={{ mode: "single", enableClickSelection: true }} // ✅ modern API (no deprecation warning)
+            getRowId={getRowId}
+            /* NEW API: valid values are 'singleRow' | 'multiRow' */
+            rowSelection={{ mode: "singleRow", enableClickSelection: true }}
             onSelectionChanged={onSelectionChanged}
             readOnlyEdit={false}
             editType="fullRow"
