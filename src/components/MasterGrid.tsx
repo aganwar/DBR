@@ -71,6 +71,8 @@ export default function MasterGrid({
           clearDirty();
           onSelectResource(null);
           onSelectionCount(0);
+          if (!alive) return;
+          setLoading(false); // ensure we’re not stuck in “Working…”
           return;
         }
 
@@ -109,8 +111,8 @@ export default function MasterGrid({
   /** Reset the dirty tracker */
   const clearDirty = () => {
     dirtyRef.current.clear();
-    // Repaint grid to remove dirty highlighting
-    gridRef.current?.api.redrawRows();
+    // Repaint grid to remove dirty highlighting (guard API)
+    gridRef.current?.api?.redrawRows();
   };
 
   /** Is the specific cell marked dirty? */
@@ -143,9 +145,9 @@ export default function MasterGrid({
     setRows((prev) => [blank, ...prev]);
     // mark required field visually as dirty until user fills
     markDirtyCell(blank.id!, "resourceGroup", true);
-    gridRef.current?.api.ensureIndexVisible(0);
+    gridRef.current?.api?.ensureIndexVisible(0);
     setTimeout(() => {
-      gridRef.current?.api.startEditingCell({
+      gridRef.current?.api?.startEditingCell({
         rowIndex: 0,
         colKey: "resourceGroup",
       });
@@ -157,14 +159,16 @@ export default function MasterGrid({
     if (!canWrite) return;
     const apiGrid = gridRef.current?.api;
     const selected = apiGrid?.getSelectedRows() ?? [];
-    const realIds = selected.map((r) => r.id).filter((id) => typeof id === "number" || typeof id === "string");
+    const realIds = selected
+      .map((r) => r.id)
+      .filter((id) => typeof id === "number" || typeof id === "string");
     if (realIds.length === 0) {
       // locally remove any unsaved new rows that are selected
       if (selected.length) {
         setRows((prev) => prev.filter((r) => !selected.some((s) => s.id === r.id)));
         // cleanup dirty map
         selected.forEach((s) => dirtyRef.current.delete(s.id as any));
-        apiGrid?.deselectAll();
+        apiGrid?.deselectAll?.();
         onSelectionCount(0);
       }
       return;
@@ -178,7 +182,7 @@ export default function MasterGrid({
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       setRows((res.data || []).map(toResource));
       clearDirty();
-      apiGrid?.deselectAll();
+      gridRef.current?.api?.deselectAll?.();
       onSelectResource(null);
       onSelectionCount(0);
     } catch (e: any) {
@@ -231,7 +235,7 @@ export default function MasterGrid({
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       setRows((res.data || []).map(toResource));
       clearDirty();
-      gridRef.current?.api.deselectAll();
+      gridRef.current?.api?.deselectAll?.();
       onSelectionCount(0);
       onSelectResource(null);
     } catch (e: any) {
@@ -266,7 +270,7 @@ export default function MasterGrid({
     );
     markDirtyCell(e.data.id!, e.colDef.field!, e.newValue !== e.oldValue);
     // Repaint just this row for performance
-    gridRef.current?.api.refreshCells({ rowNodes: [e.node], force: true });
+    gridRef.current?.api?.refreshCells({ rowNodes: [e.node], force: true });
   };
 
   /** Selection change: single selection -> send id; multiple/none -> null */
@@ -338,12 +342,11 @@ export default function MasterGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
-            theme="legacy"
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             animateRows
-            rowSelection={{ mode: "multiRow" }}
+            rowSelection="multiple"
             suppressRowClickSelection={false}
             onRowSelected={onRowSelected}
             readOnlyEdit={false}
