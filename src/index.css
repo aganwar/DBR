@@ -135,3 +135,13 @@ body { @apply bg-slate-100 text-slate-800 antialiased; }
 main.flex-1.overflow-auto {
   overflow: hidden;
 }
+
+/* Ensure Tailwind bg utilities show inside AG Grid cells */
+.ag-theme-alpine.modern-ag .ag-cell.bg-emerald-50 {
+  background-color: #ecfdf5 !important; /* Tailwind emerald-50 */
+}
+
+.ag-theme-alpine.modern-ag .ag-cell.bg-rose-50 {
+  background-color: #fff1f2 !important; /* Tailwind rose-50 */
+}
+

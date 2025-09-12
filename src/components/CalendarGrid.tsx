@@ -15,13 +15,9 @@ import type { CalendarRowDto, CalendarPatchDto } from "../types";
 import { thisWeek, next7Days, nextWeek, thisMonth, allRange } from "../utils/dates";
 
 type Props = {
-  /** Selected resource id/code; when null we still render headers with no rows */
   selectedResource: string | number | null;
-  /** Optional toast helper */
   onNotify?: (message: string, variant?: "success" | "info" | "error") => void;
-  /** Let parent know if there are unsaved changes */
   onDirty?: (isDirty: boolean) => void;
-  /** Access control */
   canWrite?: boolean;
 };
 
@@ -32,19 +28,8 @@ type RowModel = {
   is_customised: boolean;
 };
 
-type Pending = Record<
-  string, // date key
-  {
-    capacity?: number | null;
-    is_off?: boolean;
-  }
->;
-
-/** Per-cell validation errors for edited fields */
-type Errors = Record<
-  string, // date key
-  Partial<Record<keyof RowModel, true>>
->;
+type Pending = Record<string, { capacity?: number | null; is_off?: boolean }>;
+type Errors = Record<string, Partial<Record<keyof RowModel, true>>>;
 
 export default function CalendarGrid({
   selectedResource,
@@ -70,6 +55,7 @@ export default function CalendarGrid({
     () => Object.values(errors).some((e) => e && Object.keys(e).length > 0),
     [errors]
   );
+
   React.useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
 
   // Load whenever selection or range changes
@@ -121,7 +107,7 @@ export default function CalendarGrid({
       if (typeof value === "number" && Number.isFinite(value) && value >= 0) return true;
       return false;
     }
-    if (field === "is_off") return true; // boolean always valid
+    if (field === "is_off") return true;
     return true;
   }
 
@@ -149,9 +135,9 @@ export default function CalendarGrid({
         const f = (p.colDef.field as keyof RowModel) || "capacity";
         const edited = !!pending[d]?.hasOwnProperty(f);
         const invalid = !!errors[d]?.[f];
-        if (edited && invalid) return "bg-rose-50";      // edited + invalid → light red
-        if (edited) return "bg-emerald-50";              // edited + valid   → light green
-        return "";                                       // unchanged
+        if (edited && invalid) return "bg-rose-50";  // edited + invalid → light red
+        if (edited) return "bg-emerald-50";          // edited + valid   → light green
+        return "";
       },
     }),
     [canWrite, selectedResource, pending, errors]
@@ -164,7 +150,6 @@ export default function CalendarGrid({
         field: "capacity",
         headerName: "Capacity",
         type: "numericColumn",
-        // Value parser isn’t strictly used with readOnlyEdit=true, but keeping it is harmless
         valueParser: (p: any) => {
           const v = String(p.newValue ?? "").trim();
           if (v === "") return null;
@@ -203,7 +188,7 @@ export default function CalendarGrid({
       nextVal = !!newValue;
     }
 
-    // When toggling off-day ON, force capacity to 0 for that date
+    // If turning off-day ON, force capacity 0 (UI + payload)
     let extra: Partial<RowModel> | undefined;
     if (field === "is_off" && nextVal === true) extra = { capacity: 0 };
 
@@ -214,7 +199,7 @@ export default function CalendarGrid({
       )
     );
 
-    // Track pending patch
+    // Track pending change
     setPending((prev) => {
       const next = { ...prev };
       const entry = next[dateKey] ? { ...next[dateKey] } : {};
@@ -225,14 +210,13 @@ export default function CalendarGrid({
       return next;
     });
 
-    // Validate edited field (and extra capacity change if any)
-    const invalid = !validate(field, nextVal);
-    setErrorFlag(dateKey, field, invalid);
+    // Validate edited cell(s)
+    setErrorFlag(dateKey, field, !validate(field, nextVal));
     if (extra && typeof extra.capacity !== "undefined") {
       setErrorFlag(dateKey, "capacity", !validate("capacity", extra.capacity));
     }
 
-    gridRef.current?.api?.flashCells({ rowNodes: [node], columns: [column] });
+    gridRef.current?.api?.flashCells({ rowNodes: [e.node], columns: [e.column] });
   };
 
   // ----- Save / Cancel -----
@@ -245,7 +229,7 @@ export default function CalendarGrid({
       await api.patch(`/api/calendar/${encodeURIComponent(String(selectedResource))}`, body);
       onNotify?.("Calendar saved", "success");
 
-      // Refresh from server and clear feedback
+      // Refresh & clear feedback
       const res = await api.get<CalendarRowDto[]>(
         `/api/calendar/${encodeURIComponent(String(selectedResource))}?from=${from}&to=${to}`
       );
@@ -266,6 +250,7 @@ export default function CalendarGrid({
     }
   };
 
+  /** Cancel is ALWAYS enabled: refresh rows, keep selection & range, drop edits/errors */
   const cancel = async () => {
     if (!selectedResource) {
       setPending({});
@@ -329,33 +314,33 @@ export default function CalendarGrid({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header (Save/Cancel at the top, consistent with Master) */}
+      {/* Header with actions (Save/Cancel always visible/enabled) */}
       <div className="card-header">
         <div className="font-medium text-slate-800">Selected Item — Calendar</div>
         <div className="flex items-center gap-2 text-sm">
           <div className="text-xs text-slate-500 mr-2">
             Range: {from || "—"} → {to || "—"}
           </div>
-          <button className="btn" onClick={setRangeThisWeek}>This week</button>
-          <button className="btn" onClick={setRangeNext7}>Next 7</button>
-          <button className="btn" onClick={setRangeNextWeek}>Next week</button>
-          <button className="btn" onClick={setRangeThisMonth}>This month</button>
-          <button className="btn-ghost" onClick={setRangeAll}>All</button>
+          <button className="btn h-8 px-3 text-xs" onClick={setRangeThisWeek}>This week</button>
+          <button className="btn h-8 px-3 text-xs" onClick={setRangeNext7}>Next 7</button>
+          <button className="btn h-8 px-3 text-xs" onClick={setRangeNextWeek}>Next week</button>
+          <button className="btn h-8 px-3 text-xs" onClick={setRangeThisMonth}>This month</button>
+          <button className="btn-ghost h-8 px-3 text-xs" onClick={setRangeAll}>All</button>
 
           <div className="w-px h-5 bg-slate-200 mx-1" />
 
           <button
-            className="btn"
+            className="btn h-8 px-3 text-xs"
             onClick={save}
             disabled={!canWrite || !dirty || hasErrors || !selectedResource}
             title={hasErrors ? "Fix invalid cells before saving" : "Save changes"}
           >
             Save
           </button>
+          {/* Cancel is ALWAYS enabled to refresh while preserving selection & range */}
           <button
-            className="btn-ghost"
+            className="btn-ghost h-8 px-3 text-xs"
             onClick={cancel}
-            disabled={!dirty || !selectedResource}
           >
             Cancel
           </button>
@@ -377,18 +362,19 @@ export default function CalendarGrid({
             defaultColDef={defaultColDef}
             animateRows
             editType="fullRow"
-            readOnlyEdit={true}         /* REQUIRED for onCellEditRequest to fire */
+            readOnlyEdit={true}         /* required for onCellEditRequest */
             onCellEditRequest={onCellEditRequest}
             onGridReady={onGridReady}
           />
         </div>
 
-        {/* Bottom hints / status */}
+        {/* Hint */}
         {showEmptyHint && (
           <div className="mt-2 text-xs text-slate-500">
             Select a single resource from the Master grid to load its calendar.
           </div>
         )}
+
         {loading && <div className="text-sm text-slate-500 mt-2">Working…</div>}
       </div>
     </div>

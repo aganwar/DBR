@@ -50,6 +50,9 @@ export default function MasterGrid({
 
   const dirtyRef = React.useRef<DirtyMap>(new Map());
 
+  /** Persist the currently selected key so we can re-select it after refresh/cancel */
+  const selectedKeyRef = React.useRef<string | number | null>(null);
+
   // fetch data whenever groups change
   React.useEffect(() => {
     let alive = true;
@@ -80,8 +83,10 @@ export default function MasterGrid({
         setRows(mapped);
         clearDirty();
 
-        onSelectResource(null);
-        onSelectionCount(0);
+        // Preserve selection if possible
+        reselectAfterRefresh(mapped);
+
+        onSelectionCount(gridRef.current?.api?.getSelectedRows()?.length || 0);
       } catch (e: any) {
         if (!alive) return;
         setError(e?.message || "Failed to load resources");
@@ -149,6 +154,7 @@ export default function MasterGrid({
         selected.forEach((s) => dirtyRef.current.delete(s.id as any));
         apiGrid?.deselectAll?.();
         onSelectionCount(0);
+        selectedKeyRef.current = null;
       }
       return;
     }
@@ -158,11 +164,12 @@ export default function MasterGrid({
       await api.post("/api/resources/delete", { ids: realIds });
       const param = (initialGroups ?? []).join(",");
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
-      setRows((res.data || []).map(toResource));
+      const mapped = (res.data || []).map(toResource);
+      setRows(mapped);
       clearDirty();
-      gridRef.current?.api?.deselectAll?.();
-      onSelectResource(null);
-      onSelectionCount(0);
+      // Reselect if the same id still exists
+      reselectAfterRefresh(mapped);
+      onSelectionCount(gridRef.current?.api?.getSelectedRows()?.length || 0);
     } catch (e: any) {
       setError(e?.message || "Delete failed");
     } finally {
@@ -188,8 +195,13 @@ export default function MasterGrid({
       await api.post<ResourceDto[]>("/api/resources/save", payload);
       const param = (initialGroups ?? []).join(",");
       const fresh = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
-      setRows((fresh.data || []).map(toResource));
+      const mapped = (fresh.data || []).map(toResource);
+      setRows(mapped);
       clearDirty();
+
+      // Reselect previous selection
+      reselectAfterRefresh(mapped);
+
       onMasterPatched?.();
     } catch (e: any) {
       setError(e?.message || "Save failed");
@@ -198,17 +210,20 @@ export default function MasterGrid({
     }
   };
 
+  /** Cancel must ALWAYS be enabled: refresh data from server, keep filters & selection, drop edits */
   const cancel = async () => {
     setLoading(true);
     setError(null);
     try {
       const param = (initialGroups ?? []).join(",");
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
-      setRows((res.data || []).map(toResource));
+      const mapped = (res.data || []).map(toResource);
+      setRows(mapped);
       clearDirty();
-      gridRef.current?.api?.deselectAll?.();
-      onSelectionCount(0);
-      onSelectResource(null);
+
+      // Reapply selection if present
+      reselectAfterRefresh(mapped);
+      onSelectionCount(gridRef.current?.api?.getSelectedRows()?.length || 0);
     } catch (e: any) {
       setError(e?.message || "Reload failed");
     } finally {
@@ -216,27 +231,50 @@ export default function MasterGrid({
     }
   };
 
-  /** Provide a stable row id so selection & updates behave predictably. */
+  /** Stable key for rows (matches what we use to reselect) */
   const getRowId = React.useCallback((params: { data: RowModel }) => {
     const key = params.data?.id ?? params.data?.resourceGroup;
     return String(key ?? "");
   }, []);
 
-  /** Always send a usable key to Calendar:
-   *  - Prefer row.id if present
-   *  - Else fall back to row.resourceGroup
-   */
+  /** Remember and emit selection → Calendar */
   const onSelectionChanged = () => {
     const sel = gridRef.current?.api?.getSelectedRows?.() ?? [];
     onSelectionCount(sel.length);
     if (sel.length === 1) {
       const row = sel[0];
       const key = (row.id ?? row.resourceGroup) as string | number | undefined;
+      selectedKeyRef.current = key ?? null; // remember for reselect on refresh/cancel
       onSelectResource(key ?? null);
     } else {
+      selectedKeyRef.current = null;
       onSelectResource(null);
     }
   };
+
+  /** Re-select previously selected row (by our stable key) */
+  function reselectAfterRefresh(nextRows: RowModel[]) {
+    const apiGrid = gridRef.current?.api;
+    const prev = selectedKeyRef.current;
+    if (!apiGrid || prev == null) return;
+    const prevKey = String(prev);
+
+    let matched = false;
+    apiGrid.forEachNode((node) => {
+      const nodeKey =
+        (node.data?.id != null ? String(node.data.id) : String(node.data?.resourceGroup ?? ""));
+      if (!matched && nodeKey === prevKey) {
+        node.setSelected(true);
+        matched = true;
+      }
+    });
+    if (!matched) {
+      // if it no longer exists, clear selection state
+      apiGrid.deselectAll();
+      selectedKeyRef.current = null;
+      onSelectResource(null);
+    }
+  }
 
   const cellClass = (p: CellClassParams<RowModel>) => {
     const col = p.colDef.field!;
@@ -299,7 +337,8 @@ export default function MasterGrid({
           <button className="btn" onClick={save} disabled={!canWrite || dirtyRef.current.size === 0}>
             Save
           </button>
-          <button className="btn-ghost" onClick={cancel} disabled={dirtyRef.current.size === 0}>
+          {/* Cancel is ALWAYS enabled to refresh while preserving filters/selection */}
+          <button className="btn-ghost" onClick={cancel}>
             Cancel
           </button>
           <div className="w-px h-5 bg-slate-200 mx-1" />
@@ -316,13 +355,12 @@ export default function MasterGrid({
         <div className="ag-theme-alpine modern-ag h-full">
           <AgGridReact<RowModel>
             ref={gridRef as any}
-            theme="legacy"  /* using CSS file themes, avoids Theming API warning */
+            theme="legacy"                                  // keep legacy CSS theme
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             animateRows
             getRowId={getRowId}
-            /* NEW API: valid values are 'singleRow' | 'multiRow' */
             rowSelection={{ mode: "singleRow", enableClickSelection: true }}
             onSelectionChanged={onSelectionChanged}
             readOnlyEdit={false}
