@@ -184,9 +184,7 @@ export default function CalendarGrid({
         nextVal = Number.isFinite(n) && n >= 0 ? n : oldValue ?? null;
       }
     }
-    if (field === "is_off") {
-      nextVal = !!newValue;
-    }
+    if (field === "is_off") nextVal = !!newValue;
 
     // If turning off-day ON, force capacity 0 (UI + payload)
     let extra: Partial<RowModel> | undefined;
@@ -314,32 +312,31 @@ export default function CalendarGrid({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header with actions (Save/Cancel always visible/enabled) */}
+      {/* Header with consistent, non-wrapping buttons */}
       <div className="card-header">
-        <div className="font-medium text-slate-800">Selected Item — Calendar</div>
+        <div className="font-medium text-slate-800">Selected Item</div>
         <div className="flex items-center gap-2 text-sm">
           <div className="text-xs text-slate-500 mr-2">
             Range: {from || "—"} → {to || "—"}
           </div>
-          <button className="btn h-8 px-3 text-xs" onClick={setRangeThisWeek}>This week</button>
-          <button className="btn h-8 px-3 text-xs" onClick={setRangeNext7}>Next 7</button>
-          <button className="btn h-8 px-3 text-xs" onClick={setRangeNextWeek}>Next week</button>
-          <button className="btn h-8 px-3 text-xs" onClick={setRangeThisMonth}>This month</button>
-          <button className="btn-ghost h-8 px-3 text-xs" onClick={setRangeAll}>All</button>
+          <button className="btn whitespace-nowrap" onClick={setRangeThisWeek}>This week</button>
+          <button className="btn whitespace-nowrap" onClick={setRangeNext7}>Next 7</button>
+          <button className="btn whitespace-nowrap" onClick={setRangeNextWeek}>Next week</button>
+          <button className="btn whitespace-nowrap" onClick={setRangeThisMonth}>This month</button>
+          <button className="btn-ghost whitespace-nowrap" onClick={setRangeAll}>All</button>
 
           <div className="w-px h-5 bg-slate-200 mx-1" />
 
           <button
-            className="btn h-8 px-3 text-xs"
+            className="btn whitespace-nowrap"
             onClick={save}
             disabled={!canWrite || !dirty || hasErrors || !selectedResource}
             title={hasErrors ? "Fix invalid cells before saving" : "Save changes"}
           >
             Save
           </button>
-          {/* Cancel is ALWAYS enabled to refresh while preserving selection & range */}
           <button
-            className="btn-ghost h-8 px-3 text-xs"
+            className="btn-ghost whitespace-nowrap"
             onClick={cancel}
           >
             Cancel
