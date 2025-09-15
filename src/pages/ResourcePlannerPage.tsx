@@ -1,27 +1,12 @@
-// src/App.tsx
+// src/pages/ResourcePlannerPage.tsx
 import React from "react";
-import "./index.css";
+import ControlRail from "../components/ControlRail";
+import MasterGrid from "../components/MasterGrid";
+import CalendarGrid from "../components/CalendarGrid";
+import FilterModal from "../components/FilterModal";
+import { useToast } from "../components/Toast";
 
-import Header from "./components/Header";
-import ControlRail from "./components/ControlRail";
-import MasterGrid from "./components/MasterGrid";
-import CalendarGrid from "./components/CalendarGrid";
-import FilterModal from "./components/FilterModal";
-import { Toast, useToast } from "./components/Toast";
-import { ThemeProvider } from "./contexts/ThemeContext";
-
-export default function App() {
-  // Provide theme and toast context at the top
-  return (
-    <ThemeProvider>
-      <Toast>
-        <AppContent />
-      </Toast>
-    </ThemeProvider>
-  );
-}
-
-function AppContent() {
+export default function ResourcePlannerPage() {
   const toast = useToast();
 
   // Page state
@@ -57,17 +42,14 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-transparent">
-      {/* Top header with icon + title */}
-      <Header />
-
+    <>
       {/* Main area: left rail + content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left control rail (funnel) */}
         <ControlRail onOpenFilter={openFilter} />
 
         {/* Content column */}
-        <main className="flex-1 overflow-auto p-3">
+        <div className="flex-1 overflow-auto p-3">
           {/* 12-col content grid: master (5) / calendar (7) */}
           <div className="grid grid-cols-12 gap-3 h-full">
             {/* Master grid (left) */}
@@ -97,7 +79,7 @@ function AppContent() {
               </div>
             </section>
           </div>
-        </main>
+        </div>
       </div>
 
       {/* Filter Modal */}
@@ -107,6 +89,6 @@ function AppContent() {
         onApply={applyGroups}
         onClose={() => setFilterOpen(false)}
       />
-    </div>
+    </>
   );
 }
