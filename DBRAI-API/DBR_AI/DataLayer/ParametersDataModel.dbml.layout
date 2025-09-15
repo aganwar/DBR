@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ordesignerObjectsDiagram dslVersion="1.0.0.0" absoluteBounds="0, 0, 11, 8.5" name="ParametersDataModel">
+  <DataContextMoniker Name="/ParametersDataModelDataContext" />
+  <nestedChildShapes>
+    <classShape Id="de847462-ec2a-417b-bab8-c6b3bc596733" isExpanded="false" absoluteBounds="0.875, 0.5, 3, 0.45">
+      <DataClassMoniker Name="/ParametersDataModelDataContext/ocx_param_resource_calendar" />
+      <nestedChildShapes>
+        <elementListCompartment Id="45ef03b7-2732-4189-aaa5-98aaf1578eeb" absoluteBounds="0.89000000000000012, 0.96000000000000085, 2.8449999999999998, 1.4031982421875" name="DataPropertiesCompartment" titleTextColor="Black" itemTextColor="Black" />
+      </nestedChildShapes>
+    </classShape>
+    <classShape Id="24972072-6ee8-41f2-9c4f-be49ede0f4d8" isExpanded="false" absoluteBounds="4.5, 0.5, 2.875, 0.45">
+      <DataClassMoniker Name="/ParametersDataModelDataContext/vw_ocx_param_resource_calendar_edit" />
+      <nestedChildShapes>
+        <elementListCompartment Id="a281a94c-fd28-4597-8087-7f77fbe50b46" absoluteBounds="4.5150000000000006, 0.96000000000000085, 2.8449999999999998, 2.1724039713541665" name="DataPropertiesCompartment" titleTextColor="Black" itemTextColor="Black" />
+      </nestedChildShapes>
+    </classShape>
+    <classShape Id="2554a3e3-daed-43dd-9e30-1e106dc95df9" isExpanded="false" absoluteBounds="0.875, 1.125, 3, 0.45">
+      <DataClassMoniker Name="/ParametersDataModelDataContext/ocx_param_scheduled_resource" />
+      <nestedChildShapes>
+        <elementListCompartment Id="3d1b320b-1a77-4d51-8287-c0a424e16d07" absoluteBounds="0.89000000000000012, 1.5850000000000009, 1.9700000000000002, 1.0185953776041665" name="DataPropertiesCompartment" titleTextColor="Black" itemTextColor="Black" />
+      </nestedChildShapes>
+    </classShape>
+    <classShape Id="fde27105-29b1-4df5-8763-2b7b99776efc" isExpanded="false" absoluteBounds="4.5, 1.125, 2.875, 0.45">
+      <DataClassMoniker Name="/ParametersDataModelDataContext/vw_ocx_param_scheduled_resource_edit" />
+      <nestedChildShapes>
+        <elementListCompartment Id="e9f7cf32-7347-40b0-a909-4dfebf879c8d" absoluteBounds="4.515, 1.5850000000000009, 1.9700000000000002, 1.2108968098958333" name="DataPropertiesCompartment" titleTextColor="Black" itemTextColor="Black" />
+      </nestedChildShapes>
+    </classShape>
+  </nestedChildShapes>
+</ordesignerObjectsDiagram>

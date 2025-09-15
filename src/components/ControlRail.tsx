@@ -34,7 +34,9 @@ export default function ControlRail({ onOpenFilter, children }: ControlRailProps
         onKeyDown={onKeyDown}
         aria-label="Open filter"
         title="Open filter"
-        className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 active:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 active:bg-slate-100
+                   dark:border-slate-700 dark:hover:bg-slate-800 dark:active:bg-slate-700
+                   focus:outline-none focus:ring-2 focus:ring-sky-400 dark:focus:ring-sky-500"
       >
         {/* Funnel icon (inline SVG, no external icon deps) */}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">

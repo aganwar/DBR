@@ -1,0 +1,94 @@
+Filtering & baseline
+User story
+As a resource manager,
+When I open the “Scheduled Resource” page,
+I want the filter funnel to list all resource groups,
+So I can quickly choose what I want to plan.
+Acceptance criteria (Given/When/Then)
+•	Given the page has loaded, When I click the funnel icon, Then a filter dialog opens showing all groups with a “Select all” option.
+•	Given I select one or more groups and click “Apply filter”, Then the Master grid shows only resources from those groups.
+•	Given filters are applied, When I click “Clear filter”, Then both the Master grid and Calendar grid clear their rows but keep their column headers visible.
+________________________________________
+Master grid — selection drives calendar
+User story
+As a resource manager,
+When I select a single resource in the Master grid,
+I want the Calendar grid to load that resource’s schedule,
+So I can plan its capacity by day.
+Acceptance criteria
+•	Given one resource row is selected, When the selection changes, Then the Calendar grid fetches data for that resource (keeping current date range).
+•	Given no resource is selected, Then the Calendar grid shows only headers (no rows).
+________________________________________
+Master grid — inline edit, batch save, cancel
+User story
+As a resource manager,
+When I edit capacity or “Is Constraint” in the Master grid,
+I want visual feedback and a safe way to commit or discard,
+So I can batch my changes confidently.
+Acceptance criteria
+•	Given I edit a cell, Then that cell is highlighted light green if valid, or light red if invalid.
+•	Given there are valid edits, Then “Save” is enabled; When I click “Save”, Then changes persist and highlights clear.
+•	Given any invalid edit exists, Then “Save” is disabled until I fix or cancel those edits.
+•	Given I click “Cancel” (always enabled), Then the Master grid refreshes from the server, preserves the current filters and reselects the previous row if it still exists, and clears highlights.
+________________________________________
+Calendar grid — range, inline edit, batch save, cancel
+User story
+As a resource manager,
+When I adjust the date range,
+I want the Calendar grid to reload within that range,
+So I can focus on the right planning window.
+Acceptance criteria
+•	Given quick range buttons (This week / Next 7 / Next week / This month / All), When I click one, Then the Calendar grid refetches for the selected resource within that range.
+•	Given I edit a day’s capacity or off-day flag, Then the edited cell shows green if valid or red if invalid; off-day ON forces capacity to 0.
+•	Given valid edits exist and no invalid cells, Then “Save” is enabled; When I click “Save”, Then the grid PATCHes the server, refetches, and clears highlights.
+•	Given I click “Cancel” (always enabled), Then the Calendar grid refetches for the same resource and range, preserving selection and clearing highlights.
+________________________________________
+Clear filter — resets both grids
+User story
+As a resource manager,
+When I click “Clear filter” in the funnel dialog,
+I want both grids to clear their data (not headers),
+So I can start a new planning selection.
+Acceptance criteria
+•	Given filters were applied, When I click “Clear filter”, Then the Master grid shows no rows and the Calendar grid shows no rows for any previous selection.
+________________________________________
+Validation & guardrails
+User story
+As a resource manager,
+When I input values,
+I want immediate validation feedback,
+So I don’t save bad data.
+Acceptance criteria
+•	Capacity accepts null/empty or a finite number ≥ 0.
+•	Invalid inputs show a red background; Save is disabled until fixed or canceled.
+•	Off-day toggle is always valid; when turned on, capacity auto-sets to 0.
+________________________________________
+Persistence of state on cancel
+User story
+As a resource manager,
+When I change my mind mid-edit,
+I want Cancel to refresh from the server but keep my context,
+So I don’t lose my filters or selection.
+Acceptance criteria
+•	Master grid Cancel: preserves current group filter + reselection if the row still exists.
+•	Calendar grid Cancel: preserves selected resource + current date range.
+•	In both grids, all unsaved highlights/edits are dropped.
+________________________________________
+Layout & responsiveness
+User story
+As a resource manager,
+When I resize the browser,
+I want both grids to stretch from header to bottom,
+So I can use the available screen estate.
+Acceptance criteria
+•	Grid containers occupy the vertical space between the header bar and the window bottom.
+•	Column headers remain visible even when there are no rows.
+________________________________________
+Non-functional
+•	Save/Cancel remain in the grid headers (top) for both grids.
+•	Button labels: This week / Next 7 / Next week / This month / All / Save / Cancel.
+•	Visual feedback colors: light green for valid edits, light red for invalid edits.
+•	Cancel is always enabled in both grids.
+________________________________________
+When you share your detailed workflow, I’ll slot it into this structure, expand acceptance criteria (including specific API calls and example payloads), and align any edge cases you want covered.
+

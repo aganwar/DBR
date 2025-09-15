@@ -7,8 +7,6 @@ import type {
   CellEditRequestEvent,
   GridReadyEvent,
 } from "ag-grid-community";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-alpine.css";
 
 import { api } from "../api";
 import type { CalendarRowDto, CalendarPatchDto } from "../types";
@@ -105,6 +103,9 @@ export default function CalendarGrid({
       // allow null/empty; else finite number >= 0
       if (value === "" || value == null) return true;
       if (typeof value === "number" && Number.isFinite(value) && value >= 0) return true;
+      // Also handle string numbers
+      const num = Number(value);
+      if (typeof value === "string" && !isNaN(num) && Number.isFinite(num) && num >= 0) return true;
       return false;
     }
     if (field === "is_off") return true;
@@ -123,6 +124,31 @@ export default function CalendarGrid({
     });
   }
 
+  // ----- Cell class helper for individual fields -----
+  const getCellClass = React.useCallback((p: CellClassParams<RowModel>) => {
+    const d = p.data?.date || "";
+    const f = p.colDef.field as keyof RowModel;
+
+    // Check if this specific field was edited
+    const edited = f === "capacity" ?
+      (pending[d] && "capacity" in pending[d]) :
+      f === "is_off" ?
+        (pending[d] && "is_off" in pending[d]) :
+        false;
+
+    const invalid = !!errors[d]?.[f];
+
+    if (edited && invalid) {
+      console.log(`CalendarGrid: Applied bg-rose-50 to cell ${d}-${f}`);
+      return "bg-rose-50";  // edited + invalid → light red
+    }
+    if (edited) {
+      console.log(`CalendarGrid: Applied bg-emerald-50 to cell ${d}-${f}`);
+      return "bg-emerald-50";          // edited + valid   → light green
+    }
+    return "";
+  }, [pending, errors]);
+
   // ----- Grid defs -----
   const defaultColDef: ColDef<RowModel> = React.useMemo(
     () => ({
@@ -130,17 +156,8 @@ export default function CalendarGrid({
       resizable: true,
       filter: true,
       editable: canWrite && !!selectedResource, // disable edits if no selection
-      cellClass: (p: CellClassParams<RowModel>) => {
-        const d = p.data?.date || "";
-        const f = (p.colDef.field as keyof RowModel) || "capacity";
-        const edited = !!pending[d]?.hasOwnProperty(f);
-        const invalid = !!errors[d]?.[f];
-        if (edited && invalid) return "bg-rose-50";  // edited + invalid → light red
-        if (edited) return "bg-emerald-50";          // edited + valid   → light green
-        return "";
-      },
     }),
-    [canWrite, selectedResource, pending, errors]
+    [canWrite, selectedResource]
   );
 
   const colDefs = React.useMemo<ColDef<RowModel>[]>(() => {
@@ -150,22 +167,25 @@ export default function CalendarGrid({
         field: "capacity",
         headerName: "Capacity",
         type: "numericColumn",
+        cellClass: getCellClass,
         valueParser: (p: any) => {
           const v = String(p.newValue ?? "").trim();
           if (v === "") return null;
           const n = Number(v.replace(",", "."));
-          return Number.isFinite(n) && n >= 0 ? n : p.oldValue ?? null;
+          // Return the parsed value even if invalid - let validation handle it
+          return Number.isFinite(n) ? n : p.newValue;
         },
       },
       {
         field: "is_off",
         headerName: "Off day",
         cellRenderer: "agCheckboxCellRenderer",
+        cellClass: getCellClass,
         width: 120,
       },
       { field: "is_customised", headerName: "Customised", editable: false, width: 130 },
     ];
-  }, []);
+  }, [getCellClass]);
 
   // ----- Controlled editing (AG Grid) -----
   const onCellEditRequest = (e: CellEditRequestEvent<RowModel>) => {
@@ -175,20 +195,39 @@ export default function CalendarGrid({
     const dateKey = data.date;
     const field = colDef.field as keyof RowModel;
 
-    // Normalize values
+    // Normalize values - but don't auto-correct invalid values, let them pass for validation
     let nextVal: any = newValue;
     if (field === "capacity") {
-      if (newValue === "" || newValue == null) nextVal = null;
-      else {
+      if (newValue === "" || newValue == null) {
+        nextVal = null;
+      } else {
         const n = Number(String(newValue).replace(",", "."));
-        nextVal = Number.isFinite(n) && n >= 0 ? n : oldValue ?? null;
+        nextVal = Number.isFinite(n) ? n : newValue; // Keep original value if invalid
       }
     }
     if (field === "is_off") nextVal = !!newValue;
 
-    // If turning off-day ON, force capacity 0 (UI + payload)
+    // Handle bidirectional logic between is_off and capacity
     let extra: Partial<RowModel> | undefined;
-    if (field === "is_off" && nextVal === true) extra = { capacity: 0 };
+
+    if (field === "is_off") {
+      if (nextVal === true) {
+        // If turning off-day ON, force capacity 0
+        extra = { capacity: 0 };
+      }
+      // If turning off-day OFF, don't auto-change capacity (user might want specific value)
+    }
+
+    if (field === "capacity") {
+      if (nextVal === 0 || nextVal === "0") {
+        // If capacity is set to 0, turn on is_off flag
+        extra = { is_off: true };
+      } else if (typeof nextVal === "number" && nextVal > 0) {
+        // If capacity is positive, turn off is_off flag
+        extra = { is_off: false };
+      }
+      // If capacity is null/empty or invalid, don't change is_off flag
+    }
 
     // Update visible rows
     setRows((prev) =>
@@ -203,18 +242,48 @@ export default function CalendarGrid({
       const entry = next[dateKey] ? { ...next[dateKey] } : {};
       if (field === "capacity") entry.capacity = nextVal as number | null;
       if (field === "is_off") entry.is_off = nextVal as boolean;
-      if (extra && typeof extra.capacity !== "undefined") entry.capacity = extra.capacity;
+
+      // Handle extra fields from bidirectional logic
+      if (extra) {
+        if (typeof extra.capacity !== "undefined") entry.capacity = extra.capacity;
+        if (typeof extra.is_off !== "undefined") entry.is_off = extra.is_off;
+      }
+
       next[dateKey] = entry;
       return next;
     });
 
     // Validate edited cell(s)
     setErrorFlag(dateKey, field, !validate(field, nextVal));
-    if (extra && typeof extra.capacity !== "undefined") {
-      setErrorFlag(dateKey, "capacity", !validate("capacity", extra.capacity));
+
+    // Validate extra fields from bidirectional logic
+    if (extra) {
+      if (typeof extra.capacity !== "undefined") {
+        setErrorFlag(dateKey, "capacity", !validate("capacity", extra.capacity));
+      }
+      if (typeof extra.is_off !== "undefined") {
+        setErrorFlag(dateKey, "is_off", !validate("is_off", extra.is_off));
+      }
     }
 
-    gridRef.current?.api?.flashCells({ rowNodes: [e.node], columns: [e.column] });
+    // Force cell refresh to update visual feedback
+    setTimeout(() => {
+      const affectedColumns = [e.column];
+
+      // If bidirectional logic affected other fields, refresh those columns too
+      if (extra) {
+        if (typeof extra.capacity !== "undefined") {
+          const capacityCol = gridRef.current?.api?.getColumnDef("capacity");
+          if (capacityCol) affectedColumns.push(capacityCol as any);
+        }
+        if (typeof extra.is_off !== "undefined") {
+          const isOffCol = gridRef.current?.api?.getColumnDef("is_off");
+          if (isOffCol) affectedColumns.push(isOffCol as any);
+        }
+      }
+
+      gridRef.current?.api?.refreshCells({ rowNodes: [e.node], columns: affectedColumns, force: true });
+    }, 0);
   };
 
   // ----- Save / Cancel -----
@@ -312,23 +381,25 @@ export default function CalendarGrid({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header with consistent, non-wrapping buttons */}
+      {/* Header matching MasterGrid height */}
       <div className="card-header">
-        <div className="font-medium text-slate-800">Selected Item</div>
-        <div className="flex items-center gap-2 text-sm">
-          <div className="text-xs text-slate-500 mr-2">
-            Range: {from || "—"} → {to || "—"}
+        <div className="flex items-center gap-3">
+          <div className="font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">Selected Item</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+            {from || "—"} → {to || "—"}
           </div>
-          <button className="btn whitespace-nowrap" onClick={setRangeThisWeek}>This week</button>
-          <button className="btn whitespace-nowrap" onClick={setRangeNext7}>Next 7</button>
-          <button className="btn whitespace-nowrap" onClick={setRangeNextWeek}>Next week</button>
-          <button className="btn whitespace-nowrap" onClick={setRangeThisMonth}>This month</button>
-          <button className="btn-ghost whitespace-nowrap" onClick={setRangeAll}>All</button>
+        </div>
+        <div className="flex items-center gap-1 text-sm">
+          <button className="btn whitespace-nowrap text-xs px-2 py-1" onClick={setRangeThisWeek}>Week</button>
+          <button className="btn whitespace-nowrap text-xs px-2 py-1" onClick={setRangeNext7}>+7</button>
+          <button className="btn whitespace-nowrap text-xs px-2 py-1" onClick={setRangeNextWeek}>Next</button>
+          <button className="btn whitespace-nowrap text-xs px-2 py-1" onClick={setRangeThisMonth}>Month</button>
+          <button className="btn-ghost whitespace-nowrap text-xs px-2 py-1" onClick={setRangeAll}>All</button>
 
-          <div className="w-px h-5 bg-slate-200 mx-1" />
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1" />
 
           <button
-            className="btn whitespace-nowrap"
+            className="btn whitespace-nowrap text-xs px-2 py-1"
             onClick={save}
             disabled={!canWrite || !dirty || hasErrors || !selectedResource}
             title={hasErrors ? "Fix invalid cells before saving" : "Save changes"}
@@ -336,7 +407,7 @@ export default function CalendarGrid({
             Save
           </button>
           <button
-            className="btn-ghost whitespace-nowrap"
+            className="btn-ghost whitespace-nowrap text-xs px-2 py-1"
             onClick={cancel}
           >
             Cancel
@@ -345,7 +416,7 @@ export default function CalendarGrid({
       </div>
 
       {error && (
-        <div className="px-4 py-2 text-rose-700 bg-rose-50 border-t border-rose-200">{error}</div>
+        <div className="px-4 py-2 text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/30 border-t border-rose-200 dark:border-rose-700">{error}</div>
       )}
 
       {/* Grid (headers visible even with no rows) */}
@@ -367,12 +438,12 @@ export default function CalendarGrid({
 
         {/* Hint */}
         {showEmptyHint && (
-          <div className="mt-2 text-xs text-slate-500">
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             Select a single resource from the Master grid to load its calendar.
           </div>
         )}
 
-        {loading && <div className="text-sm text-slate-500 mt-2">Working…</div>}
+        {loading && <div className="text-sm text-slate-500 dark:text-slate-400 mt-2">Working…</div>}
       </div>
     </div>
   );

@@ -73,19 +73,19 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
       aria-labelledby="filter-title"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative z-10 w-[min(680px,96vw)] rounded-xl bg-white border border-slate-200 shadow-xl">
+      <div className="relative z-10 w-[min(680px,96vw)] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <h2 id="filter-title" className="text-base font-semibold text-slate-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+          <h2 id="filter-title" className="text-base font-semibold text-slate-800 dark:text-slate-200">
             Filter — Resource Groups
           </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="p-2 rounded-md hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            className="p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400 dark:focus:ring-sky-500"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" />
@@ -102,21 +102,26 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search groups…"
-                className="h-9 w-[240px] rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                className="h-9 w-[240px] rounded-md border border-slate-300 dark:border-slate-600
+                           bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                           placeholder-slate-500 dark:placeholder-slate-400
+                           px-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 dark:focus:ring-sky-500"
               />
-              <div className="pointer-events-none absolute right-2 top-2.5 text-slate-400">
+              <div className="pointer-events-none absolute right-2 top-2.5 text-slate-400 dark:text-slate-500">
                 <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M11 19a8 8 0 100-16 8 8 0 000 16zm7 2l-3.5-3.5" stroke="currentColor" strokeWidth="1.6" />
                 </svg>
               </div>
             </div>
 
-            <div className="h-6 w-px bg-slate-200" />
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-600" />
 
             <button
               type="button"
               onClick={selectAll}
-              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              className="h-9 px-3 rounded-md border border-slate-300 dark:border-slate-600
+                         bg-white dark:bg-slate-700 text-sm text-slate-700 dark:text-slate-300
+                         hover:bg-slate-50 dark:hover:bg-slate-600"
               disabled={loading || allGroups.length === 0}
               title="Select all groups"
             >
@@ -125,7 +130,9 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
             <button
               type="button"
               onClick={clearSelection}
-              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              className="h-9 px-3 rounded-md border border-slate-300 dark:border-slate-600
+                         bg-white dark:bg-slate-700 text-sm text-slate-700 dark:text-slate-300
+                         hover:bg-slate-50 dark:hover:bg-slate-600"
               disabled={loading || selected.size === 0}
               title="Clear current selection"
             >
@@ -134,28 +141,28 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
           </div>
 
           {/* Status / error */}
-          {loading && <div className="text-sm text-slate-500">Loading groups…</div>}
-          {error && <div className="text-sm text-rose-700">Error: {error}</div>}
+          {loading && <div className="text-sm text-slate-500 dark:text-slate-400">Loading groups…</div>}
+          {error && <div className="text-sm text-rose-700 dark:text-rose-300">Error: {error}</div>}
 
           {/* List */}
           {!loading && !error && (
-            <div className="max-h-[42vh] overflow-auto rounded-md border border-slate-200">
+            <div className="max-h-[42vh] overflow-auto rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700">
               {filtered.length === 0 ? (
-                <div className="p-3 text-sm text-slate-500">No groups found.</div>
+                <div className="p-3 text-sm text-slate-500 dark:text-slate-400">No groups found.</div>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-100 dark:divide-slate-600">
                   {filtered.map((g) => {
                     const checked = selected.has(g);
                     return (
-                      <li key={g} className="flex items-center gap-3 px-3 py-2">
+                      <li key={g} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-600">
                         <input
                           id={`chk-${g}`}
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggle(g)}
-                          className="h-4 w-4 rounded border-slate-300"
+                          className="h-4 w-4 rounded border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-700"
                         />
-                        <label htmlFor={`chk-${g}`} className="text-sm text-slate-800">
+                        <label htmlFor={`chk-${g}`} className="text-sm text-slate-800 dark:text-slate-200 cursor-pointer flex-1">
                           {g}
                         </label>
                       </li>
@@ -168,15 +175,17 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
         </div>
 
         {/* Footer actions */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-200">
-          <div className="text-xs text-slate-500">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-700">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
             {selected.size} selected {query ? `• filtered (${filtered.length})` : ""}
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={clearAndClose}
-              className="h-9 px-3 rounded-md border text-sm text-slate-700 hover:bg-slate-50"
+              className="h-9 px-3 rounded-md border border-slate-300 dark:border-slate-600
+                         bg-white dark:bg-slate-700 text-sm text-slate-700 dark:text-slate-300
+                         hover:bg-slate-50 dark:hover:bg-slate-600"
               title="Clear filter and close"
             >
               Clear filter
@@ -184,7 +193,9 @@ export default function FilterModal({ open, initial, onApply, onClose }: Props) 
             <button
               type="button"
               onClick={apply}
-              className="h-9 px-3 rounded-md border text-sm text-white bg-slate-800 hover:bg-slate-900"
+              className="h-9 px-3 rounded-md border border-slate-800 dark:border-slate-600
+                         text-sm text-white bg-slate-800 dark:bg-slate-700
+                         hover:bg-slate-900 dark:hover:bg-slate-600"
               disabled={loading}
               title="Apply selected groups"
             >

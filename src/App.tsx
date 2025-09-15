@@ -8,13 +8,16 @@ import MasterGrid from "./components/MasterGrid";
 import CalendarGrid from "./components/CalendarGrid";
 import FilterModal from "./components/FilterModal";
 import { Toast, useToast } from "./components/Toast";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 export default function App() {
-  // Provide toast context at the top
+  // Provide theme and toast context at the top
   return (
-    <Toast>
-      <AppContent />
-    </Toast>
+    <ThemeProvider>
+      <Toast>
+        <AppContent />
+      </Toast>
+    </ThemeProvider>
   );
 }
 
@@ -54,7 +57,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-transparent">
       {/* Top header with icon + title */}
       <Header />
 

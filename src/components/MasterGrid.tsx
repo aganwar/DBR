@@ -7,8 +7,6 @@ import type {
   GridReadyEvent,
   CellEditRequestEvent,
 } from "ag-grid-community";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-alpine.css";
 
 import { api } from "../api";
 import type { ResourceDto, GridConfigDto, Resource } from "../types";
@@ -34,6 +32,12 @@ type RowModel = Resource & { __isNew?: boolean };
 /** Track dirty cells per (rowId -> set of colIds) */
 type DirtyMap = Map<string | number, Set<string>>;
 
+/** Track invalid cells per (rowId -> set of colIds) */
+type ErrorMap = Map<string | number, Set<string>>;
+
+/** Track pending edits (similar to CalendarGrid pattern) */
+type PendingEdits = Record<string | number, Partial<RowModel>>;
+
 export default function MasterGrid({
   initialGroups,
   onSelectResource,
@@ -41,6 +45,7 @@ export default function MasterGrid({
   onMasterPatched,
   canWrite = true,
 }: Props) {
+  console.log('MasterGrid: Component rendered/re-rendered', { initialGroups, canWrite });
   const gridRef = React.useRef<AgGridReact<RowModel>>(null);
 
   const [rows, setRows] = React.useState<RowModel[]>([]);
@@ -48,7 +53,8 @@ export default function MasterGrid({
   const [error, setError] = React.useState<string | null>(null);
   const [gridConfig, setGridConfig] = React.useState<GridConfigDto | null>(null);
 
-  const dirtyRef = React.useRef<DirtyMap>(new Map());
+  const [pending, setPending] = React.useState<PendingEdits>({});
+  const [errors, setErrors] = React.useState<Record<string | number, Partial<Record<keyof RowModel, true>>>>({});
 
   /** Persist the currently selected key so we can re-select it after refresh/cancel */
   const selectedKeyRef = React.useRef<string | number | null>(null);
@@ -64,7 +70,7 @@ export default function MasterGrid({
         // explicitly cleared filter => show nothing
         if (initialGroups && initialGroups.length === 0) {
           setRows([]);
-          clearDirty();
+          clearPending();
           onSelectResource(null);
           onSelectionCount(0);
           setLoading(false);
@@ -81,7 +87,7 @@ export default function MasterGrid({
 
         const mapped: RowModel[] = (res.data || []).map(toResource);
         setRows(mapped);
-        clearDirty();
+        clearPending();
 
         // Preserve selection if possible
         reselectAfterRefresh(mapped);
@@ -101,25 +107,43 @@ export default function MasterGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialGroups)]);
 
-  const clearDirty = () => {
-    dirtyRef.current.clear();
+  const clearPending = () => {
+    setPending({});
+    setErrors({});
     gridRef.current?.api?.redrawRows();
   };
 
-  const isDirtyCell = (rowId: string | number | undefined, colId: string) => {
-    if (rowId === undefined || rowId === null) return false;
-    return !!dirtyRef.current.get(rowId)?.has(colId);
-  };
+  function setErrorFlag(rowKey: string | number, field: keyof RowModel, invalid: boolean) {
+    setErrors((prev) => {
+      const next = { ...prev };
+      const entry = { ...(next[rowKey] || {}) };
+      if (invalid) entry[field] = true;
+      else delete entry[field];
+      if (Object.keys(entry).length === 0) delete next[rowKey];
+      else next[rowKey] = entry;
+      return next;
+    });
+  }
 
-  const markDirtyCell = (rowId: string | number | undefined, colId: string, dirty: boolean) => {
-    if (rowId === undefined || rowId === null) return;
-    const map = dirtyRef.current;
-    const set = map.get(rowId) ?? new Set<string>();
-    if (dirty) set.add(colId);
-    else set.delete(colId);
-    if (set.size > 0) map.set(rowId, set);
-    else map.delete(rowId);
-  };
+  // Validation function for MasterGrid fields - capacity is mandatory, must be 0 or positive
+  function validate(field: keyof RowModel, value: any): boolean {
+    if (field === "capacity") {
+      // capacity is mandatory - cannot be null/empty
+      if (value === "" || value == null || value === undefined) return false;
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) return true;
+      // Also handle string numbers
+      const num = Number(value);
+      if (typeof value === "string" && !isNaN(num) && Number.isFinite(num) && num >= 0) return true;
+      return false;
+    }
+    if (field === "resourceGroup") {
+      return value && String(value).trim().length > 0;
+    }
+    if (field === "isConstraint") {
+      return typeof value === "boolean";
+    }
+    return true;
+  }
 
   const addNew = () => {
     if (!canWrite) return;
@@ -131,7 +155,16 @@ export default function MasterGrid({
       __isNew: true,
     };
     setRows((prev) => [blank, ...prev]);
-    markDirtyCell(blank.id!, "resourceGroup", true);
+
+    // Mark as pending edit for new row and set error flag for empty mandatory fields
+    setPending((prev) => ({
+      ...prev,
+      [blank.id!]: { resourceGroup: "", capacity: null }
+    }));
+
+    // Set error flags for empty mandatory fields
+    setErrorFlag(blank.id!, "resourceGroup", true);
+    setErrorFlag(blank.id!, "capacity", true); // capacity is also mandatory
     gridRef.current?.api?.ensureIndexVisible(0);
     setTimeout(() => {
       gridRef.current?.api?.startEditingCell({
@@ -145,32 +178,48 @@ export default function MasterGrid({
     if (!canWrite) return;
     const apiGrid = gridRef.current?.api;
     const selected = apiGrid?.getSelectedRows() ?? [];
-    const realIds = selected
-      .map((r) => r.id)
-      .filter((id) => typeof id === "number" || typeof id === "string");
-    if (realIds.length === 0) {
-      if (selected.length) {
-        setRows((prev) => prev.filter((r) => !selected.some((s) => s.id === r.id)));
-        selected.forEach((s) => dirtyRef.current.delete(s.id as any));
-        apiGrid?.deselectAll?.();
-        onSelectionCount(0);
-        selectedKeyRef.current = null;
-      }
+
+    if (selected.length === 0) {
+      setError("Please select a resource to delete.");
       return;
     }
+
+    // Use resourceGroup as the identifier for deletion (this is what the API expects)
+    const resourceGroupsToDelete = selected
+      .map((r) => r.resourceGroup)
+      .filter((group) => group && String(group).trim().length > 0);
+
+    if (resourceGroupsToDelete.length === 0) {
+      setError("Selected resources don't have valid resource groups.");
+      return;
+    }
+
+    // Don't handle new rows locally - always call API for real deletions
     setLoading(true);
     setError(null);
     try {
-      await api.post("/api/resources/delete", { ids: realIds });
+      console.log('MasterGrid: Deleting resource groups:', resourceGroupsToDelete);
+
+      // Use DELETE endpoint as per API specification with resourceGroup names
+      await api.delete("/api/resources", { data: resourceGroupsToDelete });
+
+      console.log('MasterGrid: Delete successful, refreshing data...');
+
+      // Refresh data from server
       const param = (initialGroups ?? []).join(",");
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       const mapped = (res.data || []).map(toResource);
       setRows(mapped);
-      clearDirty();
-      // Reselect if the same id still exists
-      reselectAfterRefresh(mapped);
-      onSelectionCount(gridRef.current?.api?.getSelectedRows()?.length || 0);
+      clearPending();
+
+      // Clear selection
+      apiGrid?.deselectAll?.();
+      onSelectionCount(0);
+      selectedKeyRef.current = null;
+
+      console.log('MasterGrid: Delete completed, rows refreshed');
     } catch (e: any) {
+      console.error('MasterGrid: Delete failed:', e);
       setError(e?.message || "Delete failed");
     } finally {
       setLoading(false);
@@ -179,8 +228,16 @@ export default function MasterGrid({
 
   const save = async () => {
     if (!canWrite) return;
-    const changedIds = Array.from(dirtyRef.current.keys());
-    const candidates = rows.filter((r) => changedIds.includes(r.id as any) || r.__isNew);
+
+    // Check if any errors exist before saving
+    const hasErrors = Object.keys(errors).length > 0;
+    if (hasErrors) {
+      setError("Please fix invalid fields before saving.");
+      return;
+    }
+
+    const changedIds = Object.keys(pending);
+    const candidates = rows.filter((r) => changedIds.includes(String(r.id)) || r.__isNew);
     for (const r of candidates) {
       if (!r.resourceGroup || !r.resourceGroup.trim()) {
         setError("Please fill required fields before saving.");
@@ -191,13 +248,38 @@ export default function MasterGrid({
     setLoading(true);
     setError(null);
     try {
-      const payload: ResourceDto[] = candidates.map(fromResource);
-      await api.post<ResourceDto[]>("/api/resources/save", payload);
+      // Separate new resources from existing ones
+      const newResources = candidates.filter(r => r.__isNew);
+      const existingResources = candidates.filter(r => !r.__isNew);
+
+      // Create new resources one by one (API only accepts single ResourceDto)
+      for (const newResource of newResources) {
+        const dto: ResourceDto = {
+          resource_group: newResource.resourceGroup,
+          is_constraint: newResource.isConstraint,
+          capacity: newResource.capacity ? Math.floor(newResource.capacity) : null // Convert to int
+        };
+        await api.post("/api/resources", dto);
+      }
+
+      // Update existing resources using PATCH endpoint
+      if (existingResources.length > 0) {
+        const patchItems = existingResources.map(resource => ({
+          id: resource.resourceGroup, // Use resourceGroup as id
+          changes: {
+            is_constraint: resource.isConstraint,
+            capacity: resource.capacity ? Math.floor(resource.capacity) : null // Convert to int
+          }
+        }));
+        await api.patch("/api/resources", patchItems);
+      }
+
+      // Refresh data
       const param = (initialGroups ?? []).join(",");
       const fresh = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       const mapped = (fresh.data || []).map(toResource);
       setRows(mapped);
-      clearDirty();
+      clearPending();
 
       // Reselect previous selection
       reselectAfterRefresh(mapped);
@@ -219,7 +301,7 @@ export default function MasterGrid({
       const res = await api.get<ResourceDto[]>(`/api/resources?groups=${encodeURIComponent(param)}`);
       const mapped = (res.data || []).map(toResource);
       setRows(mapped);
-      clearDirty();
+      clearPending();
 
       // Reapply selection if present
       reselectAfterRefresh(mapped);
@@ -276,32 +358,55 @@ export default function MasterGrid({
     }
   }
 
-  const cellClass = (p: CellClassParams<RowModel>) => {
-    const col = p.colDef.field!;
-    const id = p.data?.id!;
-    const classes: string[] = [];
-    if (isDirtyCell(id, col)) classes.push("bg-emerald-50");
-    if (p.data?.__isNew && col === "resourceGroup" && !p.value) classes.push("bg-amber-50");
-    return classes.join(" ");
-  };
+  // Cell class helper - create a stable function that doesn't recreate on every state change
+  const getCellClass = React.useCallback((p: CellClassParams<RowModel>) => {
+    // Use same logic as getRowId to get consistent row key
+    const rowKey = p.data?.id ?? p.data?.resourceGroup;
+    const field = p.colDef.field as keyof RowModel;
 
-  const onCellEditRequest = (e: CellEditRequestEvent<RowModel>) => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.id !== e.data.id) return r;
-        return { ...r, [e.colDef.field as string]: e.newValue };
-      })
-    );
-    markDirtyCell(e.data.id!, e.colDef.field!, e.newValue !== e.oldValue);
-    gridRef.current?.api?.refreshCells({ rowNodes: [e.node], force: true });
-  };
+    if (!rowKey) return "";
+
+    // Get current state values at render time
+    const currentPending = pending[rowKey];
+    const currentErrors = errors[rowKey];
+
+    // Check if this specific cell (row + field combination) was edited
+    const fieldInPending = currentPending && (field in currentPending);
+    const invalid = !!currentErrors?.[field];
+
+    // Only log if there's something interesting to show
+    if (fieldInPending || currentPending) {
+      console.log(`MasterGrid getCellClass: rowKey=${rowKey}, field=${field}, fieldInPending=${fieldInPending}, currentPending=${JSON.stringify(currentPending)}`);
+    }
+
+    if (fieldInPending && invalid) {
+      console.log(`MasterGrid: Applied bg-rose-50 to cell ${rowKey}-${field}`);
+      return "bg-rose-50";  // edited + invalid → light red
+    }
+    if (fieldInPending) {
+      console.log(`MasterGrid: Applied bg-emerald-50 to cell ${rowKey}-${field}`);
+      return "bg-emerald-50";          // edited + valid   → light green
+    }
+
+    // Special case for new rows - highlight mandatory empty fields
+    if (p.data?.__isNew) {
+      if (field === "resourceGroup" && (!p.value || !String(p.value).trim())) {
+        return "bg-rose-50"; // Red for mandatory empty resourceGroup
+      }
+      if (field === "capacity" && (p.value === null || p.value === undefined || p.value === "")) {
+        return "bg-rose-50"; // Red for mandatory empty capacity
+      }
+    }
+
+    return "";
+  }, [pending, errors]);
+
 
   const defaultColDef: ColDef<RowModel> = {
     editable: canWrite,
     sortable: true,
     filter: true,
     resizable: true,
-    cellClass: cellClass,
   };
 
   const colDefs: ColDef<RowModel>[] =
@@ -313,15 +418,40 @@ export default function MasterGrid({
           hide: c.hide ?? false,
           width: c.width,
           type: (c.type as any) || undefined,
-          cellClass: cellClass,
+          cellClass: getCellClass,
         }))
       : [
-          { field: "resourceGroup", headerName: "Resource Group", editable: canWrite, cellClass },
-          { field: "isConstraint", headerName: "Is Constraint", editable: canWrite, cellClass },
-          { field: "capacity", headerName: "Capacity", editable: canWrite, cellClass },
+          {
+            field: "resourceGroup",
+            headerName: "Resource Group",
+            editable: canWrite,
+            cellClass: getCellClass
+          },
+          {
+            field: "isConstraint",
+            headerName: "Is Constraint",
+            editable: canWrite,
+            cellClass: getCellClass,
+            cellRenderer: "agCheckboxCellRenderer"
+          },
+          {
+            field: "capacity",
+            headerName: "Capacity",
+            editable: canWrite,
+            cellClass: getCellClass,
+            type: "numericColumn",
+            valueParser: (p: any) => {
+              const v = String(p.newValue ?? "").trim();
+              if (v === "") return null;
+              const n = Number(v.replace(",", "."));
+              // Return the parsed value even if invalid - let validation handle it
+              return Number.isFinite(n) ? n : p.newValue;
+            }
+          },
         ];
 
   const onGridReady = (e: GridReadyEvent<RowModel>) => {
+    console.log('MasterGrid: Grid is ready!', { rowCount: rows.length });
     e.api.sizeColumnsToFit();
   };
 
@@ -329,12 +459,17 @@ export default function MasterGrid({
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="card-header">
-        <div className="font-medium text-slate-800">Filter Results</div>
+        <div className="font-medium text-slate-800 dark:text-slate-200">Filter Results</div>
         <div className="flex items-center gap-2 text-sm">
           <button className="btn" onClick={addNew} disabled={!canWrite}>
             Add
           </button>
-          <button className="btn" onClick={save} disabled={!canWrite || dirtyRef.current.size === 0}>
+          <button
+            className="btn"
+            onClick={save}
+            disabled={!canWrite || Object.keys(pending).length === 0 || Object.keys(errors).length > 0}
+            title={Object.keys(errors).length > 0 ? "Fix invalid fields before saving" : "Save changes"}
+          >
             Save
           </button>
           {/* Cancel is ALWAYS enabled to refresh while preserving filters/selection */}
@@ -361,11 +496,54 @@ export default function MasterGrid({
             defaultColDef={defaultColDef}
             animateRows
             getRowId={getRowId}
-            rowSelection={{ mode: "singleRow", enableClickSelection: true }}
+            rowSelection={{ mode: "singleRow", enableClickSelection: false, checkboxes: true, headerCheckbox: false }}
             onSelectionChanged={onSelectionChanged}
-            readOnlyEdit={false}
-            editType="fullRow"
-            onCellEditRequest={onCellEditRequest}
+            onCellValueChanged={(e) => {
+              console.log('MasterGrid: Raw cell data:', e.data);
+
+              const field = e.colDef.field as keyof RowModel;
+              const value = e.newValue;
+              // Use same logic as getRowId to get consistent row key
+              const rowKey = e.data.id ?? e.data.resourceGroup;
+              const isDirty = e.newValue !== e.oldValue;
+
+              // Validate the new value
+              const isValid = validate(field, value);
+
+              console.log(`MasterGrid onCellValueChanged:`, {
+                field,
+                oldValue: e.oldValue,
+                newValue: e.newValue,
+                rowKey,
+                isDirty,
+                isValid
+              });
+
+              console.log(`MasterGrid: About to update pending state. Current pending:`, pending);
+
+              // Track pending change
+              setPending((prev) => {
+                const next = { ...prev };
+                const entry = next[rowKey] ? { ...next[rowKey] } : {};
+                entry[field] = value;
+                next[rowKey] = entry;
+                console.log(`MasterGrid: Updated pending state:`, next);
+                return next;
+              });
+
+              // Validate edited cell
+              setErrorFlag(rowKey, field, !isValid);
+              console.log(`MasterGrid: Set error flag for ${rowKey}-${field}: ${!isValid}`);
+
+              // Force cell refresh to update visual feedback for just this cell
+              setTimeout(() => {
+                gridRef.current?.api?.refreshCells({
+                  rowNodes: [e.node],
+                  columns: [e.column],
+                  force: true
+                });
+              }, 0);
+            }}
             onGridReady={onGridReady}
           />
         </div>
