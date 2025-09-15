@@ -439,7 +439,7 @@ export default function CalendarGrid({
         {/* Hint */}
         {showEmptyHint && (
           <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-            Select a single resource from the Master grid to load its calendar.
+            
           </div>
         )}
 
