@@ -425,14 +425,16 @@ export default function MasterGrid({
             field: "resourceGroup",
             headerName: "Resource Group",
             editable: canWrite,
-            cellClass: getCellClass
+            cellClass: getCellClass,
+            headerTooltip: "Resource Group - Name/identifier of the resource group for scheduling"
           },
           {
             field: "isConstraint",
             headerName: "Is Constraint",
             editable: canWrite,
             cellClass: getCellClass,
-            cellRenderer: "agCheckboxCellRenderer"
+            cellRenderer: "agCheckboxCellRenderer",
+            headerTooltip: "Is Constraint - Whether this resource acts as a bottleneck constraint in the system"
           },
           {
             field: "capacity",
@@ -440,6 +442,7 @@ export default function MasterGrid({
             editable: canWrite,
             cellClass: getCellClass,
             type: "numericColumn",
+            headerTooltip: "Capacity - Maximum production capacity of this resource (units per time period)",
             valueParser: (p: any) => {
               const v = String(p.newValue ?? "").trim();
               if (v === "") return null;
@@ -465,18 +468,33 @@ export default function MasterGrid({
             Add
           </button>
           <button
-            className="btn"
+            className="btn-solid text-xs"
             onClick={save}
             disabled={!canWrite || Object.keys(pending).length === 0 || Object.keys(errors).length > 0}
             title={Object.keys(errors).length > 0 ? "Fix invalid fields before saving" : "Save changes"}
           >
-            Save
+            Save ({Object.keys(pending).length})
           </button>
           {/* Cancel is ALWAYS enabled to refresh while preserving filters/selection */}
-          <button className="btn-ghost" onClick={cancel}>
-            Cancel
+          <button className="btn text-xs" onClick={cancel}>
+            Cancel ({Object.keys(pending).length})
           </button>
           <div className="w-px h-5 bg-slate-200 mx-1" />
+          <button
+            onClick={() => {
+              if (gridRef.current?.api) {
+                gridRef.current.api.exportDataAsCsv({
+                  fileName: `resource-master-${new Date().toISOString().split('T')[0]}.csv`,
+                  columnKeys: colDefs.map(col => col.field).filter(field => field !== undefined) as string[]
+                });
+              }
+            }}
+            disabled={rows.length === 0}
+            className="btn text-xs"
+            title="Export grid data to CSV"
+          >
+            Export CSV
+          </button>
           <button className="btn" onClick={delSelected} disabled={!canWrite}>
             Delete
           </button>

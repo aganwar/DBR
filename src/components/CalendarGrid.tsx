@@ -162,12 +162,13 @@ export default function CalendarGrid({
 
   const colDefs = React.useMemo<ColDef<RowModel>[]>(() => {
     return [
-      { field: "date", headerName: "Date", editable: false, width: 140 },
+      { field: "date", headerName: "Date", editable: false, width: 140, headerTooltip: "Date - The calendar date for this capacity entry" },
       {
         field: "capacity",
         headerName: "Capacity",
         type: "numericColumn",
         cellClass: getCellClass,
+        headerTooltip: "Capacity - Available production capacity for this date (units per day)",
         valueParser: (p: any) => {
           const v = String(p.newValue ?? "").trim();
           if (v === "") return null;
@@ -182,8 +183,9 @@ export default function CalendarGrid({
         cellRenderer: "agCheckboxCellRenderer",
         cellClass: getCellClass,
         width: 120,
+        headerTooltip: "Off Day - Whether this date is marked as a non-working day (capacity will be set to 0)"
       },
-      { field: "is_customised", headerName: "Customised", editable: false, width: 130 },
+      { field: "is_customised", headerName: "Customised", editable: false, width: 130, headerTooltip: "Customised - Indicates if this date's capacity has been manually customized from default values" },
     ];
   }, [getCellClass]);
 
@@ -399,18 +401,36 @@ export default function CalendarGrid({
           <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1" />
 
           <button
-            className="btn whitespace-nowrap text-xs px-2 py-1"
+            className="btn-solid text-xs"
             onClick={save}
             disabled={!canWrite || !dirty || hasErrors || !selectedResource}
             title={hasErrors ? "Fix invalid cells before saving" : "Save changes"}
           >
-            Save
+            Save ({Object.keys(pending).length})
           </button>
           <button
-            className="btn-ghost whitespace-nowrap text-xs px-2 py-1"
+            className="btn text-xs"
             onClick={cancel}
           >
-            Cancel
+            Cancel ({Object.keys(pending).length})
+          </button>
+
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1" />
+
+          <button
+            onClick={() => {
+              if (gridRef.current?.api) {
+                gridRef.current.api.exportDataAsCsv({
+                  fileName: `calendar-${selectedResource || 'data'}-${new Date().toISOString().split('T')[0]}.csv`,
+                  columnKeys: colDefs.map(col => col.field).filter(field => field !== undefined) as string[]
+                });
+              }
+            }}
+            disabled={rows.length === 0 || !selectedResource}
+            className="btn text-xs"
+            title="Export calendar data to CSV"
+          >
+            Export CSV
           </button>
         </div>
       </div>

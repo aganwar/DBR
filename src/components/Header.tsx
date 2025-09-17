@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from "react";
 import HelpDropdown from "./HelpDropdown";
 import HelpGuide from "./HelpGuide";
-import IconOptions from "./IconOptions";
 import IconGenerator from "./IconGenerator";
+import PageNavigation from "./PageNavigation";
 import { updateFavicon } from "../utils/iconUtils";
+import type { PageType } from "../types/navigation";
 
 /**
  * Header
@@ -13,23 +14,19 @@ import { updateFavicon } from "../utils/iconUtils";
  * Right-aligned help/settings dropdown
  * Compact, sober B2B styling
  */
-export default function Header() {
+interface HeaderProps {
+  currentPage?: PageType;
+  onPageChange?: (page: PageType) => void;
+}
+
+export default function Header({ currentPage = 'resource-planner', onPageChange }: HeaderProps) {
   const [showHelpGuide, setShowHelpGuide] = useState(false);
-  const [showIconOptions, setShowIconOptions] = useState(false);
-  const [selectedIcon, setSelectedIcon] = useState(() => {
-    return localStorage.getItem('ocx-ai-icon') || 'modern-letters';
-  });
+  const selectedIcon = 'modern-letters';
 
   // Update favicon when component mounts
   useEffect(() => {
     updateFavicon(selectedIcon);
-  }, [selectedIcon]);
-
-  const handleIconSelect = (iconType: string) => {
-    setSelectedIcon(iconType);
-    localStorage.setItem('ocx-ai-icon', iconType);
-    updateFavicon(iconType);
-  };
+  }, []);
 
   return (
     <>
@@ -39,9 +36,9 @@ export default function Header() {
           <div className="flex items-center gap-3">
             {/* OCX AI Logo */}
             <button
-              onClick={() => setShowIconOptions(true)}
+              onClick={() => onPageChange?.('landing')}
               className="hover:opacity-80 transition-opacity"
-              title="Change OCX AI icon"
+              title="Go to Home"
             >
               <IconGenerator iconType={selectedIcon} size={32} />
             </button>
@@ -56,8 +53,14 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Right: help/settings */}
+          {/* Right: navigation + help/settings */}
           <div className="flex items-center gap-3">
+            {onPageChange && (
+              <PageNavigation
+                currentPage={currentPage}
+                onPageChange={onPageChange}
+              />
+            )}
             <HelpDropdown onOpenGuide={() => setShowHelpGuide(true)} />
           </div>
         </div>
@@ -67,14 +70,9 @@ export default function Header() {
       <HelpGuide
         open={showHelpGuide}
         onClose={() => setShowHelpGuide(false)}
+        currentPage={currentPage}
       />
 
-      {/* Icon Options Modal */}
-      <IconOptions
-        open={showIconOptions}
-        onSelect={handleIconSelect}
-        onClose={() => setShowIconOptions(false)}
-      />
     </>
   );
 }
